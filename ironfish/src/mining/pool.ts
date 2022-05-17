@@ -14,6 +14,7 @@ import { ErrorUtils } from '../utils/error'
 import { FileUtils } from '../utils/file'
 import { SetTimeoutToken } from '../utils/types'
 import { Discord } from './discord'
+import { Lark } from './lark'
 import { MiningPoolShares } from './poolShares'
 import { StratumServer, StratumServerClient } from './stratum/stratumServer'
 import { mineableHeaderString } from './utils'
@@ -27,6 +28,7 @@ export class MiningPool {
   readonly shares: MiningPoolShares
   readonly config: Config
   readonly discord: Discord | null
+  readonly lark: Lark | null
 
   private started: boolean
   private stopPromise: Promise<void> | null = null
@@ -55,12 +57,14 @@ export class MiningPool {
     config: Config
     logger?: Logger
     discord?: Discord
+    lark?: Lark
     host?: string
     port?: number
   }) {
     this.rpc = options.rpc
     this.logger = options.logger ?? createRootLogger()
     this.discord = options.discord ?? null
+    this.lark = options.lark ?? null
     this.stratum = new StratumServer({
       pool: this,
       config: options.config,
@@ -94,6 +98,7 @@ export class MiningPool {
     config: Config
     logger?: Logger
     discord?: Discord
+    lark?: Lark
     enablePayouts?: boolean
     host?: string
     port?: number
@@ -103,6 +108,7 @@ export class MiningPool {
       config: options.config,
       logger: options.logger,
       discord: options.discord,
+      lark: options.lark,
       enablePayouts: options.enablePayouts,
     })
 
@@ -111,6 +117,7 @@ export class MiningPool {
       logger: options.logger,
       config: options.config,
       discord: options.discord,
+      lark: options.lark,
       host: options.host,
       port: options.port,
       shares,
@@ -233,6 +240,7 @@ export class MiningPool {
           )} submitted successfully! ${FileUtils.formatHashRate(hashRate)}/s`,
         )
         this.discord?.poolSubmittedBlock(hashedHeader, hashRate, this.stratum.clients.size)
+        this.lark?.poolSubmittedBlock(hashedHeader, hashRate, this.stratum.clients.size)
       } else {
         this.logger.info(`Block was rejected: ${result.content.reason}`)
       }
@@ -265,6 +273,7 @@ export class MiningPool {
 
     if (this.connectWarned) {
       this.discord?.poolConnected()
+      this.lark?.poolConnected()
     }
 
     this.connectWarned = false
@@ -283,6 +292,7 @@ export class MiningPool {
 
     this.logger.info('Disconnected from node unexpectedly. Reconnecting.')
     this.discord?.poolDisconnected()
+    this.lark?.poolDisconnected()
     void this.startConnectingRpc()
   }
 
