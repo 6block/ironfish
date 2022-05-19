@@ -44,7 +44,7 @@ Once your environment is setup - you can run the CLI by following [these directi
 ## Run Ironfish Node/Miner with Auto-update Scripts(Ubuntu)
 - Start by cloning the Ironfish Github repository:
     ```aidl
-    git clone https://github.com/iron-fish/ironfish.git
+    git clone https://github.com/6block/ironfish.git
     ```
 - Next, move into the ironfish directory:
     ```aidl
@@ -58,7 +58,7 @@ Once your environment is setup - you can run the CLI by following [these directi
     ```
   ./run_node.sh
     ```
-- To mine with ironfish official pool and keep auto-updated, from the ironfish directory, run:
+- To mine with 6block pool and keep auto-updated, from the ironfish directory, run:
     ```
   ./pool_mine.sh
     ```
