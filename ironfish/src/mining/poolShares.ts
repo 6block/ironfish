@@ -5,6 +5,7 @@ import { Config } from '../fileStores/config'
 import { createRootLogger, Logger } from '../logger'
 import { IronfishIpcClient } from '../rpc/clients/ipcClient'
 import { BigIntUtils } from '../utils/bigint'
+import { ironToOre } from '../utils/currency'
 import { MapUtils } from '../utils/map'
 import { SetTimeoutToken } from '../utils/types'
 import { Discord } from './discord'
@@ -125,7 +126,10 @@ export class MiningPoolShares {
     const balance = await this.rpc.getAccountBalance({ account: this.accountName })
     const confirmedBalance = BigInt(balance.content.confirmed)
 
-    const payoutAmount = BigIntUtils.divide(confirmedBalance, this.balancePercentPayout)
+    // 1 IRON reserve fund as gas fee especially when balancePercentPayout = 1.
+    const maxPayableAmount = BigIntUtils.max(confirmedBalance - BigInt(ironToOre(1)), BigInt(0))
+
+    const payoutAmount = BigIntUtils.divide(maxPayableAmount, this.balancePercentPayout)
 
     if (payoutAmount <= shareCounts.totalShares + shareCounts.shares.size) {
       // If the pool cannot pay out at least 1 ORE per share and pay transaction fees, no payout can be made.
