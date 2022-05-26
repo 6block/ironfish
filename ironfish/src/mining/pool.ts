@@ -3,6 +3,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 import { blake3 } from '@napi-rs/blake-hash'
 import LeastRecentlyUsed from 'blru'
+import { HighLevelProducer as Producer, KafkaClient } from 'kafka-node'
 import { Assert } from '../assert'
 import { Config } from '../fileStores/config'
 import { Logger } from '../logger'
@@ -28,6 +29,7 @@ export class MiningPool {
   readonly logger: Logger
   readonly shares: MiningPoolShares
   readonly config: Config
+  readonly kafka: Producer
   readonly webhooks: WebhookNotifier[]
 
   private started: boolean
@@ -61,6 +63,7 @@ export class MiningPool {
     webhooks?: WebhookNotifier[]
     host?: string
     port?: number
+    kafkaHosts: Array<string>
     banning?: boolean
   }) {
     this.rpc = options.rpc
@@ -73,6 +76,16 @@ export class MiningPool {
       host: options.host,
       port: options.port,
       banning: options.banning,
+    })
+    this.kafka = new Producer(
+      // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
+      new KafkaClient({ kafkaHost: `${options.kafkaHosts.join(',')}` }),
+    )
+    this.kafka.on('ready', () => {
+      this.logger.info('Kafka is ready, please send message')
+    })
+    this.kafka.on('error', (err) => {
+      this.logger.info(`Kafka Client ${options.kafkaHosts.join(',')} error: ${err}`)
     })
     this.config = options.config
     this.shares = options.shares
@@ -106,6 +119,7 @@ export class MiningPool {
     port?: number
     balancePercentPayoutFlag?: number
     banning?: boolean
+    kafkaHosts: string[]
   }): Promise<MiningPool> {
     const shares = await MiningPoolShares.init({
       rpc: options.rpc,
@@ -125,6 +139,7 @@ export class MiningPool {
       port: options.port,
       shares,
       banning: options.banning,
+      kafkaHosts: options.kafkaHosts,
     })
   }
 
@@ -197,6 +212,48 @@ export class MiningPool {
     return this.target.toString('hex')
   }
 
+  sendKafka(
+    client: StratumServerClient,
+    miningRequestId: number,
+    status: string,
+    block_hash: string | null,
+  ): void {
+    // This should work like this:
+    let height: number | null
+    let difficulty: string | null
+    const miningBlock = this.miningRequestBlocks.get(miningRequestId)
+    difficulty = this.config.get('poolDifficulty').toString()
+    if (!miningBlock) {
+      height = null
+    } else {
+      height = miningBlock.header.sequence
+    }
+    const shareRecord = {
+      coin_type: 'IRON',
+      pool_id: '6block-ironfish',
+      user_address: client.publicAddress,
+      worker_id: client.id,
+      height: height,
+      block_hash: block_hash,
+      difficulty: difficulty, // share difficulty
+      status: status, // one of 'STALE', 'VALID', 'INVALID", 'SCORED'
+      timestamp: new Date().getTime(),
+    }
+    const shareKafka = [
+      {
+        topic: 'ironshare', // TBD
+        messages: JSON.stringify([shareRecord]),
+      },
+    ]
+    this.kafka.send(shareKafka, (error, data) => {
+      // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
+      this.logger.info(`${JSON.stringify(data)} submitted successfully! `)
+      if (error) {
+        this.logger.info(`Send kafka message error: ${error}`)
+      }
+    })
+  }
+
   async submitWork(
     client: StratumServerClient,
     miningRequestId: number,
@@ -204,12 +261,6 @@ export class MiningPool {
   ): Promise<void> {
     Assert.isNotNull(client.publicAddress)
     Assert.isNotNull(client.graffiti)
-    if (miningRequestId !== this.nextMiningRequestId - 1) {
-      this.logger.debug(
-        `Client ${client.id} submitted work for stale mining request: ${miningRequestId}`,
-      )
-      return
-    }
 
     const originalBlockTemplate = this.miningRequestBlocks.get(miningRequestId)
 
@@ -217,6 +268,7 @@ export class MiningPool {
       this.logger.warn(
         `Client ${client.id} work for invalid mining request: ${miningRequestId}`,
       )
+      this.sendKafka(client, miningRequestId, 'INVALID', null)
       return
     }
 
@@ -229,6 +281,15 @@ export class MiningPool {
       this.logger.warn(
         `Client ${client.id} submitted a duplicate mining request: ${miningRequestId}, ${randomness}`,
       )
+      this.sendKafka(client, miningRequestId, 'INVALID', null)
+      return
+    }
+
+    if (miningRequestId !== this.nextMiningRequestId - 1) {
+      this.logger.debug(
+        `Client ${client.id} submitted work for stale mining request: ${miningRequestId}`,
+      )
+      this.sendKafka(client, miningRequestId, 'STALE', null)
       return
     }
 
@@ -247,29 +308,32 @@ export class MiningPool {
 
     const hashedHeader = blake3(headerBytes)
 
-    if (hashedHeader.compare(Buffer.from(blockTemplate.header.target, 'hex')) !== 1) {
-      this.logger.debug('Valid block, submitting to node')
-
-      const result = await this.rpc.submitBlock(blockTemplate)
-
-      if (result.content.added) {
-        const hashRate = await this.estimateHashRate()
-        const hashedHeaderHex = hashedHeader.toString('hex')
-
-        this.logger.info(
-          `Block ${hashedHeaderHex} submitted successfully! ${FileUtils.formatHashRate(
-            hashRate,
-          )}/s`,
-        )
-        this.webhooks.map((w) =>
-          w.poolSubmittedBlock(hashedHeaderHex, hashRate, this.stratum.clients.size),
-        )
-      } else {
-        this.logger.info(`Block was rejected: ${result.content.reason}`)
-      }
-    }
-
     if (hashedHeader.compare(this.target) !== 1) {
+      if (hashedHeader.compare(Buffer.from(blockTemplate.header.target, 'hex')) !== 1) {
+        this.logger.debug('Valid block, submitting to node')
+
+        const result = await this.rpc.submitBlock(blockTemplate)
+
+        if (result.content.added) {
+          const hashRate = await this.estimateHashRate()
+          const hashedHeaderHex = hashedHeader.toString('hex')
+
+          this.logger.info(
+            `Block ${hashedHeaderHex} submitted successfully! ${FileUtils.formatHashRate(
+              hashRate,
+            )}/s`,
+          )
+          this.sendKafka(client, miningRequestId, 'SCORED', hashedHeader.toString('hex'))
+          this.webhooks.map((w) =>
+            w.poolSubmittedBlock(hashedHeaderHex, hashRate, this.stratum.clients.size),
+          )
+        } else {
+          this.logger.info(`Block was rejected: ${result.content.reason}`)
+          this.sendKafka(client, miningRequestId, 'VALID', hashedHeader.toString('hex'))
+        }
+      } else {
+        this.sendKafka(client, miningRequestId, 'VALID', hashedHeader.toString('hex'))
+      }
       this.logger.debug('Valid pool share submitted')
       await this.shares.submitShare(client.publicAddress)
     }
