@@ -3,11 +3,15 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 import { blake3 } from '@napi-rs/blake-hash'
 import LeastRecentlyUsed from 'blru'
+import { HighLevelProducer as Producer, KafkaClient } from 'kafka-node'
 import { Assert } from '../assert'
 import { Config } from '../fileStores/config'
 import { Logger } from '../logger'
+import { parseUrl } from '../network'
 import { Target } from '../primitives/target'
 import { RpcSocketClient } from '../rpc/clients'
+import { RpcTcpClient } from '../rpc/clients/tcpClient'
+import { RpcTlsClient } from '../rpc/clients/tlsClient'
 import { SerializedBlockTemplate } from '../serde/BlockTemplateSerde'
 import { BigIntUtils } from '../utils/bigint'
 import { ErrorUtils } from '../utils/error'
@@ -21,6 +25,19 @@ import { mineableHeaderString } from './utils'
 import { WebhookNotifier } from './webhooks'
 
 const RECALCULATE_TARGET_TIMEOUT = 10000
+const KAFKA_SHARE_BATCH = 500
+
+export type ShareRecord = {
+  coin_type: string
+  pool_id: string
+  user_address: string | null
+  worker_id: string
+  height: number | null
+  block_hash: string | null
+  difficulty: string
+  status: string
+  timestamp: number
+}
 
 export class MiningPool {
   readonly stratum: StratumServer
@@ -28,6 +45,8 @@ export class MiningPool {
   readonly logger: Logger
   readonly shares: MiningPoolShares
   readonly config: Config
+  readonly kafka: Producer | undefined
+  readonly rpcProxy: RpcTcpClient[]
   readonly webhooks: WebhookNotifier[]
 
   private started: boolean
@@ -48,6 +67,7 @@ export class MiningPool {
 
   currentHeadTimestamp: number | null
   currentHeadDifficulty: bigint | null
+  kafkaShares: ShareRecord[]
 
   recalculateTargetInterval: SetIntervalToken | null
 
@@ -61,7 +81,9 @@ export class MiningPool {
     webhooks?: WebhookNotifier[]
     host?: string
     port?: number
+    kafkaHosts: string[]
     banning?: boolean
+    rpcProxy?: string[]
   }) {
     this.rpc = options.rpc
     this.logger = options.logger
@@ -77,7 +99,7 @@ export class MiningPool {
     this.config = options.config
     this.shares = options.shares
     this.nextMiningRequestId = 0
-    this.miningRequestBlocks = new LeastRecentlyUsed(12)
+    this.miningRequestBlocks = new LeastRecentlyUsed(30)
     this.recentSubmissions = new Map()
     this.currentHeadTimestamp = null
     this.currentHeadDifficulty = null
@@ -94,6 +116,46 @@ export class MiningPool {
 
     this.recalculateTargetInterval = null
     this.notifyStatusInterval = null
+    this.kafkaShares = []
+
+    if (options.kafkaHosts.length !== 0) {
+      this.logger.info('Kafka Init')
+      this.kafka = new Producer(
+        new KafkaClient({ kafkaHost: `${options.kafkaHosts.join(',')}` }) ?? null,
+      )
+      this.kafka.on('ready', () => {
+        this.logger.info('Kafka is ready, please send message')
+      })
+      this.kafka.on('error', (err) => {
+        this.logger.info(`Kafka Client ${options.kafkaHosts.join(',')} error: ${err}`)
+      })
+    } else {
+      this.logger.info('No Kafka')
+      this.kafka = undefined
+    }
+
+    this.rpcProxy = []
+    if (options.rpcProxy) {
+      options.rpcProxy.map((node) => {
+        const parsed = parseUrl(node)
+        if (parsed.hostname && parsed.port) {
+          if (this.config.get('enableRpcTls')) {
+            this.logger.info(`MiningRpcTlsClient mounted ${parsed.hostname}:${parsed.port}`)
+            this.rpcProxy.push(new RpcTlsClient(parsed.hostname, parsed.port))
+          } else {
+            this.logger.info(`MiningRpcTcpClient mounted ${parsed.hostname}:${parsed.port}`)
+            this.rpcProxy.push(new RpcTcpClient(parsed.hostname, parsed.port))
+          }
+        }
+      })
+      this.logger.info(
+        `MiningRpcNode mounted on pool: ${JSON.stringify(
+          this.rpcProxy.map((a) => `${a.host}:${a.port}`),
+        )}`,
+      )
+    } else {
+      this.logger.info('No miningRpcNode mounted on pool')
+    }
   }
 
   static async init(options: {
@@ -106,6 +168,8 @@ export class MiningPool {
     port?: number
     balancePercentPayoutFlag?: number
     banning?: boolean
+    kafkaHosts: string[]
+    rpcProxy: string[]
   }): Promise<MiningPool> {
     const shares = await MiningPoolShares.init({
       rpc: options.rpc,
@@ -125,6 +189,8 @@ export class MiningPool {
       port: options.port,
       shares,
       banning: options.banning,
+      kafkaHosts: options.kafkaHosts,
+      rpcProxy: options.rpcProxy,
     })
   }
 
@@ -145,7 +211,7 @@ export class MiningPool {
     this.stratum.start()
 
     this.logger.info('Connecting to node...')
-    this.rpc.onClose.on(this.onDisconnectRpc)
+    this.rpcProxy.map((rpc) => rpc.onClose.on(this.onDisconnectRpcProxy))
 
     const statusInterval = this.config.get('poolStatusNotificationInterval')
     if (statusInterval > 0) {
@@ -166,8 +232,7 @@ export class MiningPool {
     this.logger.debug('Stopping pool, goodbye')
 
     this.started = false
-    this.rpc.onClose.off(this.onDisconnectRpc)
-    this.rpc.close()
+    this.rpcProxy.map((rpc) => rpc.close())
     this.stratum.stop()
 
     await this.shares.stop()
@@ -197,6 +262,49 @@ export class MiningPool {
     return this.target.toString('hex')
   }
 
+  sendKafka(
+    client: StratumServerClient,
+    status: string,
+    block_hash: string | null,
+    height: number | null,
+  ): void {
+    if (!this.kafka) {
+      return
+    }
+    const difficulty = this.config.get('poolDifficulty').toString()
+    const shareRecord = {
+      coin_type: 'IRON',
+      pool_id: '6block-ironfish',
+      user_address: client.publicAddress,
+      worker_id: client.name ? client.name : `${client.id}`,
+      height: height,
+      block_hash: block_hash,
+      difficulty: difficulty, // share difficulty
+      status: status, // one of 'STALE', 'VALID', 'INVALID", 'SCORED'
+      timestamp: new Date().getTime(),
+    }
+    if (shareRecord.height === null) {
+      this.logger.info(`[Pool] Share null height: ${JSON.stringify(shareRecord)}`)
+    }
+    this.kafkaShares.push(shareRecord)
+
+    if (this.kafkaShares.length >= KAFKA_SHARE_BATCH) {
+      const shareKafka = [
+        {
+          topic: 'ironshare',
+          messages: JSON.stringify(this.kafkaShares),
+        },
+      ]
+      this.kafkaShares = []
+      this.kafka.send(shareKafka, (error, data) => {
+        this.logger.debug(`${JSON.stringify(data)} submitted successfully! `)
+        if (error) {
+          this.logger.info(`Send kafka message error: ${error}`)
+        }
+      })
+    }
+  }
+
   async submitWork(
     client: StratumServerClient,
     miningRequestId: number,
@@ -204,12 +312,6 @@ export class MiningPool {
   ): Promise<void> {
     Assert.isNotNull(client.publicAddress)
     Assert.isNotNull(client.graffiti)
-    if (miningRequestId !== this.nextMiningRequestId - 1) {
-      this.logger.debug(
-        `Client ${client.id} submitted work for stale mining request: ${miningRequestId}`,
-      )
-      return
-    }
 
     const originalBlockTemplate = this.miningRequestBlocks.get(miningRequestId)
 
@@ -217,11 +319,14 @@ export class MiningPool {
       this.logger.warn(
         `Client ${client.id} work for invalid mining request: ${miningRequestId}`,
       )
+      this.sendKafka(client, 'INVALID', null, null)
       return
     }
 
     const blockTemplate = Object.assign({}, originalBlockTemplate)
     blockTemplate.header = Object.assign({}, originalBlockTemplate.header)
+
+    const height = originalBlockTemplate.header.sequence
 
     const isDuplicate = this.isDuplicateSubmission(client.id, randomness)
 
@@ -229,10 +334,9 @@ export class MiningPool {
       this.logger.warn(
         `Client ${client.id} submitted a duplicate mining request: ${miningRequestId}, ${randomness}`,
       )
+      this.sendKafka(client, 'INVALID', null, height)
       return
     }
-
-    this.addWorkSubmission(client.id, randomness)
 
     blockTemplate.header.graffiti = client.graffiti.toString('hex')
     blockTemplate.header.randomness = randomness
@@ -247,42 +351,92 @@ export class MiningPool {
 
     const hashedHeader = blake3(headerBytes)
 
-    if (hashedHeader.compare(Buffer.from(blockTemplate.header.target, 'hex')) !== 1) {
-      this.logger.debug('Valid block, submitting to node')
-
-      const result = await this.rpc.submitBlock(blockTemplate)
-
-      if (result.content.added) {
-        const hashRate = await this.estimateHashRate()
-        const hashedHeaderHex = hashedHeader.toString('hex')
-
-        this.logger.info(
-          `Block ${hashedHeaderHex} submitted successfully! ${FileUtils.formatHashRate(
-            hashRate,
-          )}/s`,
-        )
-        this.webhooks.map((w) =>
-          w.poolSubmittedBlock(hashedHeaderHex, hashRate, this.stratum.clients.size),
-        )
-      } else {
-        this.logger.info(`Block was rejected: ${result.content.reason}`)
-      }
-    }
-
     if (hashedHeader.compare(this.target) !== 1) {
+      if (miningRequestId !== this.nextMiningRequestId - 1) {
+        this.logger.debug(
+          `Client ${client.id} submitted work for stale mining request: ${miningRequestId}`,
+        )
+        this.sendKafka(client, 'STALE', hashedHeader.toString('hex'), height)
+        return
+      }
+
+      this.addWorkSubmission(client.id, randomness)
+
+      if (hashedHeader.compare(Buffer.from(blockTemplate.header.target, 'hex')) !== 1) {
+        this.logger.debug('Valid block, submitting to node')
+
+        let result = undefined
+        let submitResp = 0
+        try {
+          await Promise.all(
+            this.rpcProxy.map(async (rpc) => {
+              if (rpc.isConnected) {
+                const submitResponse = await rpc.submitBlock(blockTemplate)
+                if (submitResponse.content.added) {
+                  this.logger.info(
+                    `Block submitted to rpc node ${rpc.host}:${rpc.port} successfully!`,
+                  )
+                  submitResp += 1
+                } else {
+                  result = submitResponse.content.reason
+                }
+              }
+            }),
+          )
+        } catch (e) {
+          this.logger.warn(`Exception when submitBlockTemplate, ${JSON.stringify(e)}`)
+        }
+
+        if (submitResp > 0) {
+          const hashRate = 0
+          const hashedHeaderHex = hashedHeader.toString('hex')
+
+          this.logger.info(
+            `Block ${hashedHeaderHex} submitted successfully! ${FileUtils.formatHashRate(
+              hashRate,
+            )}/s`,
+          )
+          this.sendKafka(client, 'SCORED', hashedHeader.toString('hex'), height)
+          this.webhooks.map((w) =>
+            w.poolSubmittedBlock(hashedHeaderHex, hashRate, this.stratum.clients.size),
+          )
+        } else {
+          this.logger.info(
+            `Block was rejected: ${result ? result : 'by at least one of mining rpc nodes'}`,
+          )
+          this.sendKafka(client, 'VALID', hashedHeader.toString('hex'), height)
+        }
+      } else {
+        this.sendKafka(client, 'VALID', hashedHeader.toString('hex'), height)
+      }
       this.logger.debug('Valid pool share submitted')
-      await this.shares.submitShare(client.publicAddress)
+    } else {
+      this.addWorkSubmission(client.id, randomness)
+
+      this.sendKafka(client, 'INVALID', hashedHeader.toString('hex'), height)
     }
   }
 
   private async startConnectingRpc(): Promise<void> {
-    const connected = await this.rpc.tryConnect()
+    let connectedProxy = 0
+    await Promise.all(
+      this.rpcProxy.map(async (rpc) => {
+        if (await rpc.tryConnect()) {
+          connectedProxy += 1
+        } else {
+          this.connectTimeout = setTimeout(
+            () => void this.startConnectingMiningRpc(`${rpc.host}:${rpc.port}`),
+            5000,
+          )
+        }
+      }),
+    )
 
     if (!this.started) {
       return
     }
 
-    if (!connected) {
+    if (connectedProxy === 0) {
       if (!this.connectWarned) {
         this.logger.warn(
           `Failed to connect to node on ${String(this.rpc.connection.mode)}, retrying...`,
@@ -294,28 +448,44 @@ export class MiningPool {
       return
     }
 
-    if (connected) {
-      this.webhooks.map((w) => w.poolConnected())
+    if (connectedProxy) {
+      this.webhooks.map((w) => w.poolConnectedRpc(connectedProxy))
+      this.logger.info(`Successfully connected to ${connectedProxy} mining rpc nodes`)
     }
 
     this.connectWarned = false
     this.logger.info('Successfully connected to node')
     this.logger.info('Listening to node for new blocks')
 
-    void this.processNewBlocks().catch(async (e: unknown) => {
-      this.logger.error('Fatal error occurred while processing blocks from node:')
+    void this.processNewBlocksProxy().catch(async (e: unknown) => {
+      this.logger.error('Fatal error occured while processing blocks from node:')
       this.logger.error(ErrorUtils.renderError(e, true))
       await this.stop()
     })
   }
 
-  private onDisconnectRpc = (): void => {
-    this.stratum.waitForWork()
+  private async startConnectingMiningRpc(connect: string): Promise<void> {
+    await Promise.all(
+      this.rpcProxy.map(async (rpc) => {
+        if (`${rpc.host}:${rpc.port}` === connect) {
+          if (await rpc.tryConnect()) {
+            this.logger.info(`Successfully connected to mining rpc node ${connect}`)
+            this.webhooks.map((w) => w.poolConnectedToSingleRpc(`${connect}`))
+          } else {
+            this.connectTimeout = setTimeout(
+              () => void this.startConnectingMiningRpc(connect),
+              5000,
+            )
+          }
+        }
+      }),
+    )
+  }
 
-    this.logger.info('Disconnected from node unexpectedly. Reconnecting.')
-
-    this.webhooks.map((w) => w.poolDisconnected())
-    void this.startConnectingRpc()
+  private onDisconnectRpcProxy = (rpc: string): void => {
+    this.logger.info(`Disconnected from mining rpc node ${rpc} unexpectedly. Reconnecting.`)
+    this.webhooks.map((w) => w.poolDisconnectedRpc(rpc))
+    void this.startConnectingMiningRpc(rpc)
   }
 
   private async processNewBlocks() {
@@ -329,6 +499,64 @@ export class MiningPool {
 
       this.distributeNewBlock(payload)
     }
+  }
+
+  private async processNewBlocksProxy() {
+    await Promise.all(
+      this.rpcProxy.map(async (rpc) => {
+        if (rpc.isConnected) {
+          try {
+            for await (const payload of rpc.blockTemplateStream().contentStream(true)) {
+              Assert.isNotUndefined(payload.previousBlockInfo)
+              this.processTemplate(payload, `${rpc.host}:${rpc.port}`)
+            }
+          } catch (e) {
+            this.logger.warn(
+              `Exception when getBlockTemplate on ${rpc.host}:${rpc.port}, ${JSON.stringify(
+                e,
+              )}`,
+            )
+          }
+        }
+      }),
+    )
+  }
+
+  private processTemplate(payload: SerializedBlockTemplate, from: string) {
+    const currentBlockTemplate = this.miningRequestBlocks.get(this.nextMiningRequestId - 1)
+    let currentTaskSequence = undefined
+    let currentTaskPreviousHash = undefined
+    if (currentBlockTemplate) {
+      currentTaskSequence = currentBlockTemplate.header.sequence
+      currentTaskPreviousHash = currentBlockTemplate.header.previousBlockHash
+    }
+    if (currentTaskSequence && payload.header.sequence < currentTaskSequence) {
+      this.logger.warn(
+        `Receive stale blockTemplate for sequence ${payload.header.sequence} from ${from}`,
+      )
+      return
+    }
+    if (
+      currentTaskPreviousHash &&
+      currentTaskPreviousHash === payload.header.previousBlockHash
+    ) {
+      this.logger.info(
+        `Receive duplicated blockTemplate for sequence ${payload.header.sequence} from ${from}`,
+      )
+      return
+    }
+    Assert.isNotUndefined(payload.previousBlockInfo)
+
+    this.logger.info(
+      `Receive new blockTemplate for sequence ${payload.header.sequence} from ${from}`,
+    )
+    this.restartCalculateTargetInterval()
+
+    const currentHeadTarget = new Target(Buffer.from(payload.previousBlockInfo.target, 'hex'))
+    this.currentHeadDifficulty = currentHeadTarget.toDifficulty()
+    this.currentHeadTimestamp = payload.previousBlockInfo.timestamp
+
+    this.distributeNewBlock(payload)
   }
 
   private recalculateTarget() {
@@ -423,18 +651,13 @@ export class MiningPool {
   }
 
   async getStatus(publicAddress?: string): Promise<MiningStatusMessage> {
-    const [hashRate, sharesPending] = await Promise.all([
-      this.estimateHashRate(),
-      this.shares.sharesPendingPayout(),
-    ])
-
     let addressMinerCount = 0
 
     const status: MiningStatusMessage = {
       name: this.name,
-      hashRate: hashRate,
+      hashRate: 0,
       miners: this.stratum.subscribed,
-      sharesPending: sharesPending,
+      sharesPending: 0,
       bans: this.stratum.peers.banCount,
       clients: this.stratum.clients.size,
     }

@@ -7,7 +7,7 @@ import { Event } from '../../event'
 import { createRootLogger, Logger } from '../../logger'
 import { ErrorUtils } from '../../utils'
 import { IpcRequest } from '../adapters'
-import { RpcConnectionRefusedError } from './errors'
+import { RpcConnectionLostError, RpcConnectionRefusedError } from './errors'
 import { RpcClientConnectionInfo, RpcSocketClient } from './socketClient'
 
 const CONNECT_RETRY_MS = 2000
@@ -135,7 +135,12 @@ export class RpcIpcClient extends RpcSocketClient {
     this.client.off('error', this.onClientError)
     this.client = null
 
-    this.handleClose()
+    for (const request of this.pending.values()) {
+      request.reject(new RpcConnectionLostError(request.type))
+    }
+    this.pending.clear()
+
+    this.onClose.emit('ipcClient')
   }
 
   protected onClientError = (error: unknown): void => {

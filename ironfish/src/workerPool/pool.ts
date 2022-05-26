@@ -88,7 +88,7 @@ export class WorkerPool {
     logger?: Logger
   }) {
     this.numWorkers = options?.numWorkers ?? 1
-    this.maxJobs = options?.maxJobs ?? 1
+    this.maxJobs = options?.maxJobs ?? 5
     this.maxQueue = options?.maxQueue ?? 500
     this.change = options?.metrics?.addMeter() ?? null
     this.speed = options?.metrics?.addMeter() ?? null

@@ -438,6 +438,10 @@ export class Accounts {
     transaction: Transaction,
     params: SyncTransactionParams,
   ): Promise<void> {
+    const isMiningRpc = true
+    if (isMiningRpc) {
+      return
+    }
     const initialNoteIndex = 'initialNoteIndex' in params ? params.initialNoteIndex : null
     const blockHash = 'blockHash' in params ? params.blockHash : null
     const submittedSequence = 'submittedSequence' in params ? params.submittedSequence : null

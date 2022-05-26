@@ -10,12 +10,7 @@ import { IpcErrorSchema, IpcResponseSchema, IpcStreamSchema } from '../adapters'
 import { isRpcResponseError, RpcResponse } from '../response'
 import { Stream } from '../stream'
 import { RpcClient } from './client'
-import {
-  RequestTimeoutError,
-  RpcConnectionError,
-  RpcConnectionLostError,
-  RpcRequestError,
-} from './errors'
+import { RequestTimeoutError, RpcConnectionError, RpcRequestError } from './errors'
 
 const REQUEST_TIMEOUT_MS = null
 
@@ -39,10 +34,10 @@ export abstract class RpcSocketClient extends RpcClient {
   abstract close(): void
   protected abstract send(messageId: number, route: string, data: unknown): void
 
-  private timeoutMs: number | null = REQUEST_TIMEOUT_MS
-  private messageIds = 0
+  timeoutMs: number | null = REQUEST_TIMEOUT_MS
+  messageIds = 0
 
-  private pending = new Map<
+  pending = new Map<
     number,
     {
       response: RpcResponse<unknown>
@@ -54,7 +49,7 @@ export abstract class RpcSocketClient extends RpcClient {
     }
   >()
 
-  onClose = new Event<[]>()
+  onClose = new Event<[string]>()
 
   async tryConnect(): Promise<boolean> {
     return this.connect()
@@ -142,21 +137,6 @@ export abstract class RpcSocketClient extends RpcClient {
     }
 
     pending.stream.write(result.data)
-  }
-
-  /*
-   * Should be called by all implementers when the connection is closed by the other side (server).
-   * This cleans up all the pending requests by rejecting them with a RpcConnectionLostError
-   *
-   * TODO: we should probably also have a cleanup function for when the client closes itself
-   */
-  protected handleClose = (): void => {
-    for (const request of this.pending.values()) {
-      request.reject(new RpcConnectionLostError(request.type))
-    }
-
-    this.pending.clear()
-    this.onClose.emit()
   }
 
   protected handleEnd = async (data: unknown): Promise<void> => {

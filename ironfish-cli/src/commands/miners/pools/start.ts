@@ -7,6 +7,7 @@ import {
   Discord,
   Lark,
   MiningPool,
+  Monitor,
   parseUrl,
   StringUtils,
   WebhookNotifier,
@@ -28,6 +29,21 @@ export class StartPool extends IronfishCommand {
     lark: Flags.string({
       char: 'l',
       description: 'A lark webhook URL to send critical information to',
+    }),
+    monitor: Flags.string({
+      char: 'm',
+      description: 'a monitor webhook URL to send critical information to',
+    }),
+    miningRpc: Flags.string({
+      char: 'r',
+      description: 'comma-separated addresses of mining rpc nodes to get blockTemplate from',
+      multiple: true,
+      required: true,
+    }),
+    kafkaHosts: Flags.string({
+      char: 'k',
+      description:
+        'a host:port Kafka server address to connect to: 172.18.1.1:9092,172.18.1.2:9092 ',
     }),
     host: Flags.string({
       char: 'h',
@@ -53,6 +69,7 @@ export class StartPool extends IronfishCommand {
 
   async start(): Promise<void> {
     const { flags } = await this.parse(StartPool)
+    const { miningRpc } = flags
 
     const poolName = this.sdk.config.get('poolName')
     const nameByteLen = StringUtils.getByteLength(poolName)
@@ -97,6 +114,29 @@ export class StartPool extends IronfishCommand {
       this.log(`Lark enabled: ${larkWebhook}`)
     }
 
+    const monitorWebhook = flags.monitor ?? this.sdk.config.get('poolMonitorWebhook')
+    if (monitorWebhook) {
+      webhooks.push(
+        new Monitor({
+          webhook: monitorWebhook,
+          logger: this.logger,
+          explorerBlocksUrl: this.sdk.config.get('explorerBlocksUrl'),
+          explorerTransactionsUrl: this.sdk.config.get('explorerTransactionsUrl'),
+        }),
+      )
+
+      this.log(`Monitor enabled: ${monitorWebhook}`)
+    }
+
+    let rpcProxy: string[] = []
+    if (miningRpc !== undefined) {
+      rpcProxy = miningRpc
+        .flatMap((n) => n.split(','))
+        .filter(Boolean)
+        .map((n) => n.trim())
+    }
+    this.log(`MiningRpc detected: ${rpcProxy.join(',')}`)
+
     let host = undefined
     let port = undefined
 
@@ -113,6 +153,30 @@ export class StartPool extends IronfishCommand {
       }
     }
 
+    const kafkahosts: string[] = []
+
+    if (flags.kafkaHosts) {
+      const kafkaHostsArray = flags.kafkaHosts.split(',')
+      for (const kafkaHost of kafkaHostsArray) {
+        let khost = undefined
+        let kport = undefined
+        const parsed = parseUrl(kafkaHost)
+        if (parsed.hostname) {
+          const resolved = await dns.promises.lookup(parsed.hostname)
+          khost = resolved.address
+        }
+        if (parsed.port) {
+          kport = parsed.port
+        }
+        if (khost && kport) {
+          kafkahosts.push(`${khost}:${kport}`)
+          this.log(`Connect to Kafka server : ${khost}:${kport}`)
+        } else {
+          this.warn(`Fail to parse Kafka server address, your input :${flags.kafkaHosts}`)
+        }
+      }
+    }
+
     this.pool = await MiningPool.init({
       config: this.sdk.config,
       logger: this.logger,
@@ -123,6 +187,8 @@ export class StartPool extends IronfishCommand {
       port: port,
       balancePercentPayoutFlag: flags.balancePercentPayout,
       banning: flags.banning,
+      kafkaHosts: kafkahosts,
+      rpcProxy: rpcProxy,
     })
 
     await this.pool.start()

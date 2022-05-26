@@ -223,6 +223,12 @@ export type ConfigOptions = {
   poolLarkWebhook: ''
 
   /**
+
+   * The monitor webhook URL to post pool critical pool information to
+   */
+  poolMonitorWebhook: ''
+
+  /**
    * Whether we want the logs to the console to be in JSON format or not. This can be used to log to
    * more easily process logs on a remote server using a log service like Datadog
    */
@@ -291,12 +297,12 @@ export class Config extends KeyStore<ConfigOptions> {
       ipcPath: files.resolve(files.join(dataDir, 'ironfish.ipc')),
       logLevel: '*:info',
       logPeerMessages: false,
-      logPrefix: '',
+      logPrefix: '[%time%] [%level%]',
       miningForce: false,
       blockGraffiti: '',
       nodeName: '',
       nodeWorkers: -1,
-      nodeWorkersMax: 6,
+      nodeWorkersMax: -1,
       p2pSimulateLatency: 0,
       peerPort: DEFAULT_WEBSOCKET_PORT,
       rpcTcpHost: 'localhost',
@@ -304,14 +310,14 @@ export class Config extends KeyStore<ConfigOptions> {
       rpcTcpSecure: false,
       tlsKeyPath: files.resolve(files.join(dataDir, 'certs', 'node-key.pem')),
       tlsCertPath: files.resolve(files.join(dataDir, 'certs', 'node-cert.pem')),
-      maxPeers: 50,
+      maxPeers: 100,
       minimumBlockConfirmations: 12,
       minPeers: 1,
-      targetPeers: 50,
+      targetPeers: 80,
       telemetryApi: DEFAULT_TELEMETRY_API,
       accountName: DEFAULT_WALLET_NAME,
       generateNewIdentity: false,
-      blocksPerMessage: 20,
+      blocksPerMessage: 40,
       minerBatchSize: DEFAULT_MINER_BATCH_SIZE,
       poolName: DEFAULT_POOL_NAME,
       poolAccountName: DEFAULT_POOL_ACCOUNT_NAME,
@@ -327,6 +333,7 @@ export class Config extends KeyStore<ConfigOptions> {
       poolDiscordWebhook: '',
       poolMaxConnectionsPerIp: 0,
       poolLarkWebhook: '',
+      poolMonitorWebhook: '',
       jsonLogs: false,
       explorerBlocksUrl: DEFAULT_EXPLORER_BLOCKS_URL,
       explorerTransactionsUrl: DEFAULT_EXPLORER_TRANSACTIONS_URL,
