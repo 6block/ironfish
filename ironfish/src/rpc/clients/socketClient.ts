@@ -49,7 +49,7 @@ export abstract class RpcSocketClient extends RpcClient {
     }
   >()
 
-  onClose = new Event<[]>()
+  onClose = new Event<[string]>()
 
   async tryConnect(): Promise<boolean> {
     return this.connect()

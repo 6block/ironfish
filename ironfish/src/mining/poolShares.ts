@@ -42,7 +42,7 @@ export class MiningPoolShares {
     this.config = options.config
     this.logger = options.logger
     this.webhooks = options.webhooks ?? []
-    this.enablePayouts = options.enablePayouts ?? true
+    this.enablePayouts = options.enablePayouts ?? false
 
     this.poolName = this.config.get('poolName')
     this.recentShareCutoff = this.config.get('poolRecentShareCutoff')

@@ -140,7 +140,7 @@ export class RpcIpcClient extends RpcSocketClient {
     }
     this.pending.clear()
 
-    this.onClose.emit()
+    this.onClose.emit('ipcClient')
   }
 
   protected onClientError = (error: unknown): void => {
