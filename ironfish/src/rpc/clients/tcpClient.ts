@@ -11,13 +11,13 @@ import {
   ServerSocketRpcSchema,
 } from '../adapters/socketAdapter/protocol'
 import { MessageBuffer } from '../messageBuffer'
-import { RpcConnectionRefusedError } from './errors'
+import { RpcConnectionLostError, RpcConnectionRefusedError } from './errors'
 import { RpcClientConnectionInfo, RpcSocketClient } from './socketClient'
 
 export class RpcTcpClient extends RpcSocketClient {
   client: net.Socket | null = null
-  protected readonly host: string
-  protected readonly port: number
+  readonly host: string
+  readonly port: number
   private connectTimeout: SetTimeoutToken | null
   isConnected = false
   connection: RpcClientConnectionInfo
@@ -140,7 +140,12 @@ export class RpcTcpClient extends RpcSocketClient {
       this.client = null
     }
 
-    this.handleClose()
+    for (const request of this.pending.values()) {
+      request.reject(new RpcConnectionLostError(request.type))
+    }
+    this.pending.clear()
+
+    this.onClose.emit(`${this.host}:${this.port}`)
   }
 
   protected onMessage = (data: unknown): void => {
