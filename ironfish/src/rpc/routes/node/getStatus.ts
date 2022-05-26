@@ -33,6 +33,7 @@ export type GetNodeStatusResponse = {
     memTotal: number
   }
   miningDirector: {
+    coinbaseAddress: string
     status: 'started'
     miners: number
     blocks: number
@@ -131,6 +132,7 @@ export const GetStatusResponseSchema: yup.ObjectSchema<GetNodeStatusResponse> = 
       .defined(),
     miningDirector: yup
       .object({
+        coinbaseAddress: yup.string().defined(),
         status: yup.string().oneOf(['started']).defined(),
         miners: yup.number().defined(),
         blocks: yup.number().defined(),
@@ -290,6 +292,7 @@ function getStatus(node: IronfishNode): GetNodeStatusResponse {
       memTotal: node.metrics.memTotal,
     },
     miningDirector: {
+      coinbaseAddress: node.wallet.getDefaultAccount()?.publicAddress || '0x000',
       status: 'started',
       miners: node.miningManager.minersConnected,
       blocks: node.miningManager.blocksMined,

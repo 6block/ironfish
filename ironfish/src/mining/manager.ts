@@ -78,6 +78,7 @@ export class MiningManager {
       // Skip transactions that would cause the block to exceed the max size
       const transactionSize = getTransactionSize(transaction)
       if (currBlockSize + transactionSize > this.chain.consensus.MAX_BLOCK_SIZE_BYTES) {
+        this.node.logger.warn(`Block transaction size exceed the max size`)
         continue
       }
 
@@ -86,6 +87,8 @@ export class MiningManager {
         sequence,
       )
       if (isExpired) {
+        this.node.logger.warn(`Get expired transaction from mempool`)
+        this.memPool.deleteTransaction(transaction)
         continue
       }
 
@@ -93,11 +96,14 @@ export class MiningManager {
         return nullifiers.has(spend.nullifier)
       })
       if (isConflicted) {
+        this.node.logger.warn(`Get transaction with same spend from mempool`)
         continue
       }
 
       const { valid: isValid } = await this.chain.verifier.verifyTransactionSpends(transaction)
       if (!isValid) {
+        this.node.logger.warn(`Get invalid transaction from mempool`)
+        this.memPool.deleteTransaction(transaction)
         continue
       }
 

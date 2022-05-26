@@ -405,6 +405,10 @@ export class Wallet {
     params: SyncTransactionParams,
     accounts?: Array<Account>,
   ): Promise<void> {
+    const isMiningRpc = true
+    if (isMiningRpc) {
+      return
+    }
     const initialNoteIndex = 'initialNoteIndex' in params ? params.initialNoteIndex : null
 
     const decryptedNotesByAccountId = await this.decryptNotes(
@@ -671,7 +675,7 @@ export class Wallet {
     }
 
     await this.syncTransaction(transaction, { submittedSequence: heaviestHead.sequence })
-    memPool.acceptTransaction(transaction)
+    await memPool.acceptTransaction(transaction)
     this.broadcastTransaction(transaction)
     this.onTransactionCreated.emit(transaction)
 

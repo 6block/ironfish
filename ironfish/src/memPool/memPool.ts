@@ -125,10 +125,15 @@ export class MemPool {
   /**
    * Accepts a transaction from the network
    */
-  acceptTransaction(transaction: Transaction): boolean {
+  async acceptTransaction(transaction: Transaction): Promise<boolean> {
     const hash = transaction.hash().toString('hex')
     const sequence = transaction.expirationSequence()
     if (this.exists(transaction.hash())) {
+      return false
+    }
+
+    const { valid: isValid } = await this.chain.verifier.verifyTransactionSpends(transaction)
+    if (!isValid) {
       return false
     }
 
@@ -229,6 +234,9 @@ export class MemPool {
     if (this.transactions.has(hash)) {
       return false
     }
+    if (this.count() > 50000) {
+      return false
+    }
 
     this.transactions.set(hash, transaction)
 
@@ -246,7 +254,7 @@ export class MemPool {
     return true
   }
 
-  private deleteTransaction(transaction: Transaction): boolean {
+  deleteTransaction(transaction: Transaction): boolean {
     const hash = transaction.hash()
     const deleted = this.transactions.delete(hash)
 
