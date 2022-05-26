@@ -10,6 +10,7 @@ export class StratumServerClient {
   connected: boolean
   subscribed: boolean
   publicAddress: string | null = null
+  useEmail: boolean
   name: string | undefined
   remoteAddress: string
   graffiti: Buffer | null = null
@@ -20,6 +21,7 @@ export class StratumServerClient {
     this.socket = options.socket
     this.connected = true
     this.subscribed = false
+    this.useEmail = false
     this.messageBuffer = ''
 
     Assert.isNotUndefined(this.socket.remoteAddress)

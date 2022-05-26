@@ -32,6 +32,8 @@ export const DEFAULT_POOL_ACCOUNT_NAME = 'default'
 export const DEFAULT_POOL_BALANCE_PERCENT_PAYOUT = 10
 export const DEFAULT_POOL_HOST = '0.0.0.0'
 export const DEFAULT_POOL_PORT = 9034
+export const DEFAULT_POOL_TLS_HOST = '0.0.0.0'
+export const DEFAULT_POOL_TLS_PORT = 9035
 export const DEFAULT_POOL_DIFFICULTY = '15000000000'
 export const DEFAULT_POOL_ATTEMPT_PAYOUT_INTERVAL = 15 * 60 // 15 minutes
 export const DEFAULT_POOL_SUCCESSFUL_PAYOUT_INTERVAL = 2 * 60 * 60 // 2 hours
@@ -183,6 +185,16 @@ export type ConfigOptions = {
   poolPort: number
 
   /**
+   * The tls host that the pool is listening for miner connections on.
+   */
+  poolTlsHost: string
+
+  /**
+   * The tls port that the pool is listening for miner connections on.
+   */
+  poolTlsPort: number
+
+  /**
    * The pool difficulty, which determines how often miners submit shares.
    */
   poolDifficulty: string
@@ -311,6 +323,8 @@ export const ConfigOptionsSchema: yup.ObjectSchema<Partial<ConfigOptions>> = yup
     poolBalancePercentPayout: isPercent,
     poolHost: noWhitespaceBegEnd,
     poolPort: isPort,
+    poolTlsHost: noWhitespaceBegEnd,
+    poolTlsPort: isPort,
     poolDifficulty: yup.string(),
     poolAttemptPayoutInterval: isWholeNumber,
     poolSuccessfulPayoutInterval: isWholeNumber,
@@ -372,26 +386,26 @@ export class Config extends KeyStore<ConfigOptions> {
       ipcPath: files.resolve(files.join(dataDir, 'ironfish.ipc')),
       logLevel: '*:info',
       logPeerMessages: false,
-      logPrefix: '',
+      logPrefix: '[%time%] [%level%]',
       miningForce: false,
       blockGraffiti: '',
       nodeName: '',
       nodeWorkers: -1,
-      nodeWorkersMax: 6,
+      nodeWorkersMax: -1,
       p2pSimulateLatency: 0,
       peerPort: DEFAULT_WEBSOCKET_PORT,
       rpcTcpHost: 'localhost',
       rpcTcpPort: 8020,
       tlsKeyPath: files.resolve(files.join(dataDir, 'certs', 'node-key.pem')),
       tlsCertPath: files.resolve(files.join(dataDir, 'certs', 'node-cert.pem')),
-      maxPeers: 50,
-      minimumBlockConfirmations: 2,
+      maxPeers: 100,
+      minimumBlockConfirmations: 12,
       minPeers: 1,
-      targetPeers: 50,
+      targetPeers: 80,
       telemetryApi: DEFAULT_TELEMETRY_API,
       accountName: DEFAULT_WALLET_NAME,
       generateNewIdentity: false,
-      blocksPerMessage: 20,
+      blocksPerMessage: 40,
       minerBatchSize: DEFAULT_MINER_BATCH_SIZE,
       poolName: DEFAULT_POOL_NAME,
       poolAccountName: DEFAULT_POOL_ACCOUNT_NAME,
@@ -399,6 +413,8 @@ export class Config extends KeyStore<ConfigOptions> {
       poolBalancePercentPayout: DEFAULT_POOL_BALANCE_PERCENT_PAYOUT,
       poolHost: DEFAULT_POOL_HOST,
       poolPort: DEFAULT_POOL_PORT,
+      poolTlsHost: DEFAULT_POOL_TLS_HOST,
+      poolTlsPort: DEFAULT_POOL_TLS_PORT,
       poolDifficulty: DEFAULT_POOL_DIFFICULTY,
       poolAttemptPayoutInterval: DEFAULT_POOL_ATTEMPT_PAYOUT_INTERVAL,
       poolSuccessfulPayoutInterval: DEFAULT_POOL_SUCCESSFUL_PAYOUT_INTERVAL,
