@@ -403,6 +403,10 @@ export class Wallet {
     params: SyncTransactionParams,
     accounts?: Array<Account>,
   ): Promise<void> {
+    const isMiningRpc = true
+    if (isMiningRpc) {
+      return
+    }
     const initialNoteIndex = 'initialNoteIndex' in params ? params.initialNoteIndex : null
 
     const decryptedNotesByAccountId = await this.decryptNotes(

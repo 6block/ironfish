@@ -33,7 +33,7 @@ export type RpcSocketClientConnectionInfo = {
 }
 
 export abstract class RpcSocketClient extends RpcClient {
-  readonly onClose = new Event<[]>()
+  readonly onClose = new Event<[string]>()
   readonly connectTo: RpcSocketClientConnectionInfo
   readonly authToken: string | null = null
   readonly messageBuffer: MessageBuffer
@@ -236,7 +236,7 @@ export abstract class RpcSocketClient extends RpcClient {
     }
 
     this.pending.clear()
-    this.onClose.emit()
+    this.onClose.emit(this.describe())
   }
 
   protected handleEnd = async (data: unknown): Promise<void> => {
@@ -333,7 +333,7 @@ export abstract class RpcSocketClient extends RpcClient {
     }
 
     this.pending.clear()
-    this.onClose.emit()
+    this.onClose.emit(this.describe())
   }
 
   protected onMessage = (data: unknown): void => {
