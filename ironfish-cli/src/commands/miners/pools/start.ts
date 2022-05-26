@@ -4,11 +4,14 @@
 import {
   DEFAULT_POOL_HOST,
   DEFAULT_POOL_PORT,
+  DEFAULT_POOL_TLS_HOST,
+  DEFAULT_POOL_TLS_PORT,
   Discord,
   Lark,
   MiningPool,
   parseUrl,
   StringUtils,
+  TlsUtils,
   WebhookNotifier,
 } from '@ironfish/sdk'
 import { Flags } from '@oclif/core'
@@ -29,10 +32,26 @@ export class StartPool extends IronfishCommand {
       char: 'l',
       description: 'A lark webhook URL to send critical information to',
     }),
+    miningRpc: Flags.string({
+      char: 'r',
+      description: 'comma-separated addresses of mining rpc nodes to get blockTemplate from',
+      multiple: true,
+      required: true,
+    }),
+    kafkaHosts: Flags.string({
+      char: 'k',
+      description:
+        'a host:port Kafka server address to connect to: 172.18.1.1:9092,172.18.1.2:9092 ',
+    }),
     host: Flags.string({
       char: 'h',
       description: `A host:port listen for stratum connections: ${DEFAULT_POOL_HOST}:${String(
         DEFAULT_POOL_PORT,
+      )}`,
+    }),
+    tlsHost: Flags.string({
+      description: `A host:port listen for stratum connections over tls: ${DEFAULT_POOL_TLS_HOST}:${String(
+        DEFAULT_POOL_TLS_PORT,
       )}`,
     }),
     payouts: Flags.boolean({
@@ -47,12 +66,17 @@ export class StartPool extends IronfishCommand {
       description: 'Whether the pool should ban peers for errors or bad behavior',
       allowNo: true,
     }),
+    enableTls: Flags.boolean({
+      description: 'Whether the pool should listen for connections over tls',
+      allowNo: true,
+    }),
   }
 
   pool: MiningPool | null = null
 
   async start(): Promise<void> {
     const { flags } = await this.parse(StartPool)
+    const { miningRpc } = flags
 
     const poolName = this.sdk.config.get('poolName')
     const nameByteLen = StringUtils.getByteLength(poolName)
@@ -97,6 +121,15 @@ export class StartPool extends IronfishCommand {
       this.log(`Lark enabled: ${larkWebhook}`)
     }
 
+    let rpcProxy: string[] = []
+    if (miningRpc !== undefined) {
+      rpcProxy = miningRpc
+        .flatMap((n) => n.split(','))
+        .filter(Boolean)
+        .map((n) => n.trim())
+    }
+    this.log(`MiningRpc detected: ${rpcProxy.join(',')}`)
+
     let host = undefined
     let port = undefined
 
@@ -113,6 +146,54 @@ export class StartPool extends IronfishCommand {
       }
     }
 
+    const kafkahosts: string[] = []
+
+    if (flags.kafkaHosts) {
+      const kafkaHostsArray = flags.kafkaHosts.split(',')
+      for (const kafkaHost of kafkaHostsArray) {
+        let khost = undefined
+        let kport = undefined
+        const parsed = parseUrl(kafkaHost)
+        if (parsed.hostname) {
+          const resolved = await dns.promises.lookup(parsed.hostname)
+          khost = resolved.address
+        }
+        if (parsed.port) {
+          kport = parsed.port
+        }
+        if (khost && kport) {
+          kafkahosts.push(`${khost}:${kport}`)
+          this.log(`Connect to Kafka server : ${khost}:${kport}`)
+        } else {
+          this.warn(`Fail to parse Kafka server address, your input :${flags.kafkaHosts}`)
+        }
+      }
+    }
+
+    let tlsHost = undefined
+    let tlsPort = undefined
+
+    if (flags.tlsHost) {
+      const parsed = parseUrl(flags.tlsHost)
+
+      if (parsed.hostname) {
+        const resolved = await dns.promises.lookup(parsed.hostname)
+        tlsHost = resolved.address
+      }
+
+      if (parsed.port) {
+        tlsPort = parsed.port
+      }
+    }
+
+    let tlsOptions = undefined
+    if (flags.enableTls) {
+      const fileSystem = this.sdk.fileSystem
+      const nodeKeyPath = this.sdk.config.get('tlsKeyPath')
+      const nodeCertPath = this.sdk.config.get('tlsCertPath')
+      tlsOptions = await TlsUtils.getTlsOptions(fileSystem, nodeKeyPath, nodeCertPath)
+    }
+
     this.pool = await MiningPool.init({
       config: this.sdk.config,
       logger: this.logger,
@@ -121,8 +202,14 @@ export class StartPool extends IronfishCommand {
       webhooks: webhooks,
       host: host,
       port: port,
+      tlsHost: tlsHost,
+      tlsPort: tlsPort,
+      tlsOptions: tlsOptions,
       balancePercentPayoutFlag: flags.balancePercentPayout,
       banning: flags.banning,
+      kafkaHosts: kafkahosts,
+      rpcProxy: rpcProxy,
+      enableTls: flags.enableTls,
     })
 
     await this.pool.start()

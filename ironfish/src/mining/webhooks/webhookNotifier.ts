@@ -36,8 +36,20 @@ export abstract class WebhookNotifier {
     this.sendText('Successfully connected to node')
   }
 
+  poolConnectedRpc(count: number): void {
+    this.sendText(`Successfully connected to ${count} mining rpc nodes`)
+  }
+
   poolDisconnected(): void {
     this.sendText('Disconnected from node unexpectedly. Reconnecting.')
+  }
+
+  poolDisconnectedRpc(rpc: string): void {
+    this.sendText(`Disconnected from mining rpc node ${rpc} unexpectedly. Reconnecting.`)
+  }
+
+  poolConnectedToSingleRpc(rpc: string): void {
+    this.sendText(`Successfully connected to mining rpc node ${rpc}`)
   }
 
   poolSubmittedBlock(hashedHeaderHex: string, hashRate: number, clients: number): void {
@@ -96,6 +108,7 @@ export abstract class WebhookNotifier {
   }
 
   poolStatus(status: {
+    currentJobSequence: number
     name: string
     hashRate: number
     miners: number
@@ -106,9 +119,11 @@ export abstract class WebhookNotifier {
     this.sendText(
       `Status for mining pool '${status.name}':\n\tHashrate: ${FileUtils.formatHashRate(
         status.hashRate,
-      )}/s\n\tMiners: ${status.miners}\n\tShares pending: ${status.sharesPending}\n\tClients: ${
-        status.clients
-      }\n\tBans: ${status.bans}`,
+      )}/s\n\tLatestJob: ${status.currentJobSequence}\n\tMiners: ${
+        status.miners
+      }\n\tShares pending: ${status.sharesPending}\n\tClients: ${status.clients}\n\tBans: ${
+        status.bans
+      }`,
     )
   }
 

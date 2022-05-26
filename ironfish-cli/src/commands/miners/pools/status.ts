@@ -101,6 +101,7 @@ export class PoolStatus extends IronfishCommand {
   renderStatus(status: MiningStatusMessage): string {
     let result = ''
     result += `Status of mining pool '${status.name}':\n`
+    result += `Current job sequence:  ${status.currentJobSequence}\n`
     result += `Miners:                ${status.miners}\n`
     result += `Hashrate:              ${FileUtils.formatHashRate(status.hashRate)}\n`
     result += `Shares pending payout: ${status.sharesPending}\n`

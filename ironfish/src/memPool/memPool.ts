@@ -11,6 +11,7 @@ import { Block, BlockHeader } from '../primitives'
 import { Transaction, TransactionHash } from '../primitives/transaction'
 import { PriorityQueue } from './priorityQueue'
 
+const MAX_MEMPOOL_SIZE = 50000
 interface MempoolEntry {
   fee: bigint
   hash: TransactionHash
@@ -217,6 +218,10 @@ export class MemPool {
     const hash = transaction.hash()
 
     if (this.transactions.has(hash)) {
+      return false
+    }
+
+    if (this.size() >= MAX_MEMPOOL_SIZE) {
       return false
     }
 

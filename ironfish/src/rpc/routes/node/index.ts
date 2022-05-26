@@ -5,3 +5,6 @@
 export * from './getLogStream'
 export * from './getStatus'
 export * from './stopNode'
+export * from './getHeight'
+export * from './getBlocksInfo'
+export * from './getBlockInfo'

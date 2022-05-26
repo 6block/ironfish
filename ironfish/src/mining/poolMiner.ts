@@ -10,6 +10,7 @@ import { GraffitiUtils } from '../utils/graffiti'
 import { PromiseUtils } from '../utils/promise'
 import { isValidPublicAddress } from '../wallet/validator'
 import { StratumClient } from './stratum/stratumClient'
+import { minedPartialHeader } from './utils'
 
 export class MiningPoolMiner {
   readonly hashRate: Meter
@@ -119,6 +120,9 @@ export class MiningPoolMiner {
         this.hashRate.rate1s,
       )}/s`,
     )
+
+    const originHeader = minedPartialHeader(header)
+    this.logger.info(`New work sequence: ${originHeader.sequence}`)
 
     const headerBytes = Buffer.concat([header])
     headerBytes.set(this.graffiti, 176)
