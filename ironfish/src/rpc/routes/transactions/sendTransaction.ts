@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 import * as yup from 'yup'
+import { Transaction } from '../../..'
 import { NotEnoughFundsError } from '../../../wallet/errors'
 import { ERROR_CODES, ValidationError } from '../../adapters/errors'
 import { ApiNamespace, router } from '../router'
@@ -16,6 +17,7 @@ export type SendTransactionRequest = {
   fee: string
   expirationSequence?: number | null
   expirationSequenceDelta?: number | null
+  ifSpendAllNotes?: boolean | null
 }
 
 export type SendTransactionResponse = {
@@ -45,6 +47,7 @@ export const SendTransactionRequestSchema: yup.ObjectSchema<SendTransactionReque
     fee: yup.string().defined(),
     expirationSequence: yup.number().nullable().optional(),
     expirationSequenceDelta: yup.number().nullable().optional(),
+    ifSpendAllNotes: yup.boolean().nullable().optional(),
   })
   .defined()
 
@@ -122,7 +125,9 @@ router.register<typeof SendTransactionRequestSchema, SendTransactionResponse>(
     })
 
     try {
-      const transactionPosted = await node.wallet.pay(
+    let transactionPosted: Transaction
+    if (transaction.ifSpendAllNotes) {
+      transactionPosted = await node.wallet.payAll(
         node.memPool,
         account,
         receives,
@@ -131,6 +136,17 @@ router.register<typeof SendTransactionRequestSchema, SendTransactionResponse>(
           node.config.get('defaultTransactionExpirationSequenceDelta'),
         transaction.expirationSequence,
       )
+    } else {
+      transactionPosted = await node.wallet.pay(
+        node.memPool,
+        account,
+        receives,
+        BigInt(transaction.fee),
+        transaction.expirationSequenceDelta ??
+          node.config.get('defaultTransactionExpirationSequenceDelta'),
+        transaction.expirationSequence,
+      )
+    }
 
       request.end({
         receives: transaction.receives,

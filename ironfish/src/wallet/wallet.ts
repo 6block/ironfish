@@ -32,7 +32,7 @@ export enum TransactionStatus {
   UNCONFIRMED = 'unconfirmed',
   UNKNOWN = 'unknown',
 }
-
+const DEPOSIT_MAX_TRANSACTION = 300
 export type SyncTransactionParams =
   // Used when receiving a transaction from a block with notes
   // that have been added to the trees
@@ -616,8 +616,7 @@ export class Wallet {
         const transaction = await account.getTransaction(transactionHash)
         Assert.isNotUndefined(
           transaction,
-          `Transaction '${transactionHash.toString('hex')}' missing for account '${
-            account.id
+          `Transaction '${transactionHash.toString('hex')}' missing for account '${account.id
           }'`,
         )
         const { blockHash } = transaction
@@ -680,6 +679,50 @@ export class Wallet {
     this.onTransactionCreated.emit(transaction)
 
     return transaction
+  }
+
+  async payAll(
+    memPool: MemPool,
+    sender: Account,
+    receives: { publicAddress: string; amount: bigint; memo: string }[],
+    transactionFee: bigint,
+    defaultTransactionExpirationSequenceDelta: number,
+    expirationSequence?: number | null,
+  ): Promise<Transaction> {
+    const heaviestHead = this.chain.head
+    if (heaviestHead === null) {
+      throw new Error('You must have a genesis block to create a transaction')
+    }
+
+    expirationSequence =
+      expirationSequence ?? heaviestHead.sequence + defaultTransactionExpirationSequenceDelta
+
+    if (this.chain.verifier.isExpiredSequence(expirationSequence, this.chain.head.sequence)) {
+      throw new Error('Invalid expiration sequence for transaction')
+    }
+
+    const transactionList = await this.createTransactions(
+      sender,
+      receives,
+      transactionFee,
+      expirationSequence,
+    )
+
+    const dateNow = new Date()
+    this.logger.info(
+      `${dateNow.toString()} : ${transactionList.length} multiDeposit transactions.`,
+    )
+
+    for (const tx of transactionList) {
+      await this.syncTransaction(tx, { submittedSequence: heaviestHead.sequence })
+      await memPool.acceptTransaction(tx)
+      this.broadcastTransaction(tx)
+      this.logger.info(
+        `Hash: ${tx.unsignedHash().toString('hex')} send to mempool at Height: ${heaviestHead.sequence
+        }.`,
+      )
+    }
+    return transactionList[0]
   }
 
   async createTransaction(
@@ -783,6 +826,156 @@ export class Wallet {
         receives,
         expirationSequence,
       )
+    } finally {
+      unlock()
+    }
+  }
+
+  async createTransactions(
+    sender: Account,
+    receives: { publicAddress: string; amount: bigint; memo: string }[],
+    transactionFee: bigint,
+    expirationSequence: number,
+  ): Promise<Transaction[]> {
+    const unlock = await this.createTransactionMutex.lock()
+
+    try {
+      this.assertHasAccount(sender)
+
+      // check if the chain data is fully synced
+      if (!this.isAccountUpToDate(sender)) {
+        throw new Error(
+          `Your node must be synced with the Iron Fish network to send a transaction. `,
+        )
+      }
+
+      // TODO: If we're spending from multiple accounts, we need to figure out a
+      // way to split the transaction fee. - deekerno
+      let amountNeeded =
+        receives.reduce((acc, receive) => acc + receive.amount, BigInt(0)) + transactionFee
+      let sumoftinynotes = BigInt(0)
+
+      const notesToSpend: Array<{ note: Note; witness: NoteWitness }> = []
+      const tinynotesToSpend: Array<{ note: Note; witness: NoteWitness }> = []
+      const unspentNotes = await this.getUnspentNotes(sender)
+
+      for (const unspentNote of unspentNotes) {
+        // Skip unconfirmed notes
+        if (unspentNote.index === null || !unspentNote.confirmed) {
+          continue
+        }
+
+        if (unspentNote.note.value() > BigInt(0)) {
+          // Double-check that the nullifier for the note isn't in the tree already
+          // This would indicate a bug in the account transaction stores
+          const nullifier = Buffer.from(
+            unspentNote.note.nullifier(sender.spendingKey, BigInt(unspentNote.index)),
+          )
+
+          if (await this.chain.nullifiers.contains(nullifier)) {
+            this.logger.debug(
+              `Note was marked unspent, but nullifier found in tree: ${nullifier.toString(
+                'hex',
+              )}`,
+            )
+
+            // Update our map so this doesn't happen again
+            const noteMapValue = await sender.getDecryptedNote(unspentNote.hash)
+            if (noteMapValue) {
+              this.logger.debug(`Unspent note has index ${String(noteMapValue.index)}`)
+              await sender.updateDecryptedNote(unspentNote.hash, {
+                ...noteMapValue,
+                spent: true,
+              })
+            }
+
+            // Move on to the next note
+            continue
+          }
+
+          // Try creating a witness from the note
+          const witness = await this.chain.notes.witness(unspentNote.index)
+
+          if (witness === null) {
+            this.logger.debug(
+              `Could not create a witness for note with index ${unspentNote.index}`,
+            )
+            continue
+          }
+
+          // Otherwise, push the note into the list of notes to spend
+          this.logger.debug(
+            `Accounts: spending note ${unspentNote.index} ${unspentNote.hash.toString(
+              'hex',
+            )} ${unspentNote.note.value()}`,
+          )
+          if (unspentNote.note.value() >= amountNeeded) {
+            this.logger.info(
+              `Accounts: spending note ${unspentNote.index} ${unspentNote.hash.toString(
+                'hex',
+              )} ${unspentNote.note.value()}`,
+            )
+            notesToSpend.push({ note: unspentNote.note, witness: witness })
+          } else {
+            tinynotesToSpend.push({ note: unspentNote.note, witness: witness })
+            sumoftinynotes += unspentNote.note.value()
+          }
+        }
+        if (notesToSpend.length >= DEPOSIT_MAX_TRANSACTION) {
+          break
+        }
+      }
+
+      if (notesToSpend.length === 0) {
+        throw new Error('No spendable note')
+      }
+
+      const transactionResponse: Transaction[] | PromiseLike<Transaction[]> = []
+
+      await Promise.all(
+        notesToSpend.map(async (noteToSpend) => {
+          this.logger.info(`Number of receiver: ${receives.length}`)
+          this.logger.info(
+            `Create Tx: from ${sender.publicAddress} to ${receives[0].publicAddress} for ${receives[0].amount} coins with memo ${receives[0].memo}`,
+          )
+          const resp = await this.workerPool.createTransaction(
+            sender.spendingKey,
+            transactionFee,
+            [
+              {
+                note: noteToSpend.note,
+                treeSize: noteToSpend.witness.treeSize(),
+                authPath: noteToSpend.witness.authenticationPath,
+                rootHash: noteToSpend.witness.rootHash,
+              },
+            ],
+            receives,
+            expirationSequence,
+          )
+          transactionResponse.push(resp)
+        }),
+      )
+      if (sumoftinynotes >= amountNeeded) {
+        this.logger.info(`Integrate less than ${amountNeeded} notes to spend`)
+        this.logger.info(`Number of receiver: ${receives.length}`)
+        this.logger.info(
+          `Create Tx: from ${sender.publicAddress} to ${receives[0].publicAddress} for ${receives[0].amount} coins with memo ${receives[0].memo}`,
+        )
+        const resp = await this.workerPool.createTransaction(
+          sender.spendingKey,
+          transactionFee,
+          tinynotesToSpend.map((n) => ({
+            note: n.note,
+            treeSize: n.witness.treeSize(),
+            authPath: n.witness.authenticationPath,
+            rootHash: n.witness.rootHash,
+          })),
+          receives,
+          expirationSequence,
+        )
+        transactionResponse.push(resp)
+      }
+      return transactionResponse
     } finally {
       unlock()
     }
