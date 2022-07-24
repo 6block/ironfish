@@ -21,7 +21,7 @@ import { StratumServerClient } from './stratum/stratumServerClient'
 import { mineableHeaderString } from './utils'
 import { WebhookNotifier } from './webhooks'
 
-const RECALCULATE_TARGET_TIMEOUT = 10000
+const RECALCULATE_TARGET_TIMEOUT = 30000
 
 export class MiningPool {
   readonly stratum: StratumServer
@@ -90,7 +90,7 @@ export class MiningPool {
     this.config = options.config
     this.shares = options.shares
     this.nextMiningRequestId = 0
-    this.miningRequestBlocks = new LeastRecentlyUsed(12)
+    this.miningRequestBlocks = new LeastRecentlyUsed(30)
     this.recentSubmissions = new Map()
     this.currentHeadTimestamp = null
     this.currentHeadDifficulty = null
@@ -218,7 +218,6 @@ export class MiningPool {
     status: string,
     block_hash: string | null,
   ): void {
-    // This should work like this:
     let height: number | null
     let difficulty: string | null
     const miningBlock = this.miningRequestBlocks.get(miningRequestId)
@@ -232,12 +231,15 @@ export class MiningPool {
       coin_type: 'IRON',
       pool_id: '6block-ironfish',
       user_address: client.publicAddress,
-      worker_id: client.id,
+      worker_id: client.name ? client.name : `${client.id}`,
       height: height,
       block_hash: block_hash,
       difficulty: difficulty, // share difficulty
       status: status, // one of 'STALE', 'VALID', 'INVALID", 'SCORED'
       timestamp: new Date().getTime(),
+    }
+    if (shareRecord.height === null) {
+      this.logger.info(`[Pool] Share null height: ${JSON.stringify(shareRecord)}`)
     }
     const shareKafka = [
       {
@@ -246,8 +248,7 @@ export class MiningPool {
       },
     ]
     this.kafka.send(shareKafka, (error, data) => {
-      // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-      this.logger.info(`${JSON.stringify(data)} submitted successfully! `)
+      this.logger.debug(`${JSON.stringify(data)} submitted successfully! `)
       if (error) {
         this.logger.info(`Send kafka message error: ${error}`)
       }
