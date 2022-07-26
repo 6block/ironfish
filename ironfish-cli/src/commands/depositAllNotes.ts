@@ -30,7 +30,7 @@ export default class Bank extends IronfishCommand {
     ...RemoteFlags,
     fee: Flags.integer({
       char: 'f',
-      default: 1,
+      default: 40,
       description: `the fee amount in ORE, minimum of 1. 1 ORE is equal to ${MINIMUM_IRON_AMOUNT} IRON`,
     }),
     expirationSequenceDelta: Flags.integer({
@@ -69,7 +69,8 @@ export default class Bank extends IronfishCommand {
     }
     Assert.isNotUndefined(accountName)
 
-    const bankDepositAddress = await this.api.getDepositAddress()
+    const bankDepositAddress =
+      '1199c69c1b05e5c8d2e87fab15bf2338fdefed2a2fa6ab2604062dd15fb1bf430b021e41071e39e0b46e58'
 
     if (!bankDepositAddress) {
       this.log('Error fetching deposit address. Please try again later.')
@@ -87,14 +88,6 @@ export default class Bank extends IronfishCommand {
       this.exit(1)
     }
     Assert.isNotUndefined(graffiti)
-
-    const { canSend, errorReason } = await this.verifyCanSend(flags, graffiti)
-
-    if (!canSend) {
-      Assert.isNotNull(errorReason)
-      this.log(errorReason)
-      this.exit(1)
-    }
 
     const balanceResp = await this.client.getAccountBalance({ account: accountName })
     const confirmedBalance = Number(balanceResp.content.confirmed)

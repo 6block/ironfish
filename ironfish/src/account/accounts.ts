@@ -752,7 +752,7 @@ export class Accounts {
     blockHash: string | null
     note: UnspentNote
   }> {
-    const batchSize = 20
+    const batchSize = 100
     const incomingViewKeys = [account.incomingViewKey]
     let jobs = []
 
