@@ -7,6 +7,7 @@ import {
   Discord,
   Lark,
   MiningPool,
+  Monitor,
   parseUrl,
   StringUtils,
   WebhookNotifier,
@@ -29,9 +30,12 @@ export class StartPool extends IronfishCommand {
       char: 'l',
       description: 'a lark webhook URL to send critical information to',
     }),
+    monitor: Flags.string({
+      char: 'm',
+      description: 'a monitor webhook URL to send critical information to',
+    }),
     kafkaHosts: Flags.string({
       char: 'k',
-      required: true,
       description: 'a host:port Kafka server address to connect to: 172.18.1.1:9092,172.18.1.2:9092 ',
     }),
     host: Flags.string({
@@ -102,6 +106,20 @@ export class StartPool extends IronfishCommand {
       this.log(`Lark enabled: ${larkWebhook}`)
     }
 
+    const monitorWebhook = flags.monitor ?? this.sdk.config.get('poolMonitorWebhook')
+    if (monitorWebhook) {
+      webhooks.push(
+        new Monitor({
+          webhook: monitorWebhook,
+          logger: this.logger,
+          explorerBlocksUrl: this.sdk.config.get('explorerBlocksUrl'),
+          explorerTransactionsUrl: this.sdk.config.get('explorerTransactionsUrl'),
+        }),
+      )
+
+      this.log(`Monitor enabled: ${monitorWebhook}`)
+    }
+
     let host = undefined
     let port = undefined
 
@@ -118,25 +136,27 @@ export class StartPool extends IronfishCommand {
       }
     }
 
-    let kafkahosts:string[] = []
+    const kafkahosts: string[] = []
 
-    const kafkaHostsArray = flags.kafkaHosts.split(",")
-    for (const kafkaHost of kafkaHostsArray) {
-      let khost = undefined
-      let kport = undefined
-      const parsed = parseUrl(kafkaHost)
-      if (parsed.hostname) {
-        const resolved = await dns.promises.lookup(parsed.hostname)
-        khost = resolved.address
-      }
-      if (parsed.port) {
-        kport = parsed.port
-      }
-      if (khost && kport) {
-        kafkahosts.push(`${khost}:${kport}`)
-        this.log(`Connect to Kafka server : ${khost}:${kport}`)
-      } else {
-        this.warn(`Fail to parse Kafka server address, your input :${flags.kafkaHosts}`)
+    if (flags.kafkaHosts) {
+      const kafkaHostsArray = flags.kafkaHosts.split(',')
+      for (const kafkaHost of kafkaHostsArray) {
+        let khost = undefined
+        let kport = undefined
+        const parsed = parseUrl(kafkaHost)
+        if (parsed.hostname) {
+          const resolved = await dns.promises.lookup(parsed.hostname)
+          khost = resolved.address
+        }
+        if (parsed.port) {
+          kport = parsed.port
+        }
+        if (khost && kport) {
+          kafkahosts.push(`${khost}:${kport}`)
+          this.log(`Connect to Kafka server : ${khost}:${kport}`)
+        } else {
+          this.warn(`Fail to parse Kafka server address, your input :${flags.kafkaHosts}`)
+        }
       }
     }
 
