@@ -29,7 +29,7 @@ export class MiningPool {
   readonly logger: Logger
   readonly shares: MiningPoolShares
   readonly config: Config
-  readonly kafka: Producer
+  readonly kafka: Producer | undefined
   readonly webhooks: WebhookNotifier[]
 
   private started: boolean
@@ -63,7 +63,7 @@ export class MiningPool {
     webhooks?: WebhookNotifier[]
     host?: string
     port?: number
-    kafkaHosts: Array<string>
+    kafkaHosts: string[]
     banning?: boolean
   }) {
     this.rpc = options.rpc
@@ -76,16 +76,6 @@ export class MiningPool {
       host: options.host,
       port: options.port,
       banning: options.banning,
-    })
-    this.kafka = new Producer(
-      // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-      new KafkaClient({ kafkaHost: `${options.kafkaHosts.join(',')}` }),
-    )
-    this.kafka.on('ready', () => {
-      this.logger.info('Kafka is ready, please send message')
-    })
-    this.kafka.on('error', (err) => {
-      this.logger.info(`Kafka Client ${options.kafkaHosts.join(',')} error: ${err}`)
     })
     this.config = options.config
     this.shares = options.shares
@@ -107,6 +97,22 @@ export class MiningPool {
 
     this.recalculateTargetInterval = null
     this.notifyStatusInterval = null
+
+    if (options.kafkaHosts.length !== 0) {
+      this.logger.info('Kafka Init')
+      this.kafka = new Producer(
+        new KafkaClient({ kafkaHost: `${options.kafkaHosts.join(',')}` }) ?? null,
+      )
+      this.kafka.on('ready', () => {
+        this.logger.info('Kafka is ready, please send message')
+      })
+      this.kafka.on('error', (err) => {
+        this.logger.info(`Kafka Client ${options.kafkaHosts.join(',')} error: ${err}`)
+      })
+    } else {
+      this.logger.info('No Kafka')
+      this.kafka = undefined
+    }
   }
 
   static async init(options: {
@@ -218,6 +224,9 @@ export class MiningPool {
     status: string,
     block_hash: string | null,
   ): void {
+    if (!this.kafka) {
+      return
+    }
     let height: number | null
     let difficulty: string | null
     const miningBlock = this.miningRequestBlocks.get(miningRequestId)
