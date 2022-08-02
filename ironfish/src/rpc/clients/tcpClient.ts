@@ -16,8 +16,8 @@ import { RpcClientConnectionInfo, RpcSocketClient } from './socketClient'
 
 export class RpcTcpClient extends RpcSocketClient {
   client: net.Socket | null = null
-  protected readonly host: string
-  protected readonly port: number
+  readonly host: string
+  readonly port: number
   private connectTimeout: SetTimeoutToken | null
   isConnected = false
   connection: RpcClientConnectionInfo
@@ -134,7 +134,7 @@ export class RpcTcpClient extends RpcSocketClient {
     }
     this.pending.clear()
 
-    this.onClose.emit()
+    this.onClose.emit(`${this.host}:${this.port}`)
   }
 
   protected onMessage = (data: unknown): void => {
