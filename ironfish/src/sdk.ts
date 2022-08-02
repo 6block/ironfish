@@ -224,7 +224,6 @@ export class IronfishSdk {
         ApiNamespace.miner,
         ApiNamespace.node,
         ApiNamespace.peer,
-        ApiNamespace.transaction,
         ApiNamespace.telemetry,
         ApiNamespace.worker,
         ApiNamespace.rpc,

@@ -34,9 +34,16 @@ export class StartPool extends IronfishCommand {
       char: 'm',
       description: 'a monitor webhook URL to send critical information to',
     }),
+    miningRpc: Flags.string({
+      char: 'r',
+      description: 'comma-separated addresses of mining rpc nodes to get blockTemplate from',
+      multiple: true,
+      required: true,
+    }),
     kafkaHosts: Flags.string({
       char: 'k',
-      description: 'a host:port Kafka server address to connect to: 172.18.1.1:9092,172.18.1.2:9092 ',
+      description:
+        'a host:port Kafka server address to connect to: 172.18.1.1:9092,172.18.1.2:9092 ',
     }),
     host: Flags.string({
       char: 'h',
@@ -62,6 +69,7 @@ export class StartPool extends IronfishCommand {
 
   async start(): Promise<void> {
     const { flags } = await this.parse(StartPool)
+    const { miningRpc } = flags
 
     const poolName = this.sdk.config.get('poolName')
     const nameByteLen = StringUtils.getByteLength(poolName)
@@ -120,6 +128,15 @@ export class StartPool extends IronfishCommand {
       this.log(`Monitor enabled: ${monitorWebhook}`)
     }
 
+    let rpcProxy: string[] = []
+    if (miningRpc !== undefined) {
+      rpcProxy = miningRpc
+        .flatMap((n) => n.split(','))
+        .filter(Boolean)
+        .map((n) => n.trim())
+    }
+    this.log(`MiningRpc detected: ${rpcProxy.join(',')}`)
+
     let host = undefined
     let port = undefined
 
@@ -171,6 +188,7 @@ export class StartPool extends IronfishCommand {
       balancePercentPayoutFlag: flags.balancePercentPayout,
       banning: flags.banning,
       kafkaHosts: kafkahosts,
+      rpcProxy: rpcProxy,
     })
 
     await this.pool.start()
