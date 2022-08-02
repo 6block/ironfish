@@ -297,7 +297,7 @@ export class Config extends KeyStore<ConfigOptions> {
       ipcPath: files.resolve(files.join(dataDir, 'ironfish.ipc')),
       logLevel: '*:info',
       logPeerMessages: false,
-      logPrefix: '',
+      logPrefix: '[%time%] [%level%]',
       miningForce: false,
       blockGraffiti: '',
       nodeName: '',
