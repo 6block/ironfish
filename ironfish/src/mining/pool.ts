@@ -409,7 +409,7 @@ export class MiningPool {
       return
     }
 
-    if (!connected) {
+    if (!connected && connectedProxy === 0) {
       if (!this.connectWarned) {
         this.logger.warn(
           `Failed to connect to node on ${String(this.rpc.connection.mode)}, retrying...`,
