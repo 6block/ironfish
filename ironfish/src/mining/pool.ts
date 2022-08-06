@@ -414,7 +414,7 @@ export class MiningPool {
       return
     }
 
-    if (!connected) {
+    if (!connected && connectedProxy === 0) {
       if (!this.connectWarned) {
         this.logger.warn(
           `Failed to connect to node on ${String(this.rpc.connection.mode)}, retrying...`,
@@ -446,6 +446,25 @@ export class MiningPool {
     })
   }
 
+  private async startConnectingSingleRpc(): Promise<void> {
+    const connected = await this.rpc.tryConnect()
+    if (!connected) {
+      if (!this.connectWarned) {
+        this.logger.warn(
+          `Failed to connect to node on ${String(this.rpc.connection.mode)}, retrying...`,
+        )
+        this.connectWarned = true
+      }
+
+      this.connectTimeout = setTimeout(() => void this.startConnectingRpc(), 5000)
+      return
+    }
+
+    if (connected) {
+      this.webhooks.map((w) => w.poolConnected())
+    }
+  }
+
   private async startConnectingMiningRpc(connect: string): Promise<void> {
     await Promise.all(
       this.rpcProxy.map(async (rpc) => {
@@ -465,12 +484,10 @@ export class MiningPool {
   }
 
   private onDisconnectRpc = (): void => {
-    this.stratum.waitForWork()
-
     this.logger.info('Disconnected from node unexpectedly. Reconnecting.')
 
     this.webhooks.map((w) => w.poolDisconnected())
-    void this.startConnectingRpc()
+    void this.startConnectingSingleRpc()
   }
 
   private onDisconnectRpcProxy = (rpc: string): void => {
