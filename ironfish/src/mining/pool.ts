@@ -360,14 +360,16 @@ export class MiningPool {
         let submitResp = 0
         await Promise.all(
           this.rpcProxy.map(async (rpc) => {
-            const submitResponse = await rpc.submitBlock(blockTemplate)
-            if (submitResponse.content.added) {
-              this.logger.info(
-                `Block submitted to rpc node ${rpc.host}:${rpc.port} successfully!`,
-              )
-              submitResp += 1
-            } else {
-              result = submitResponse.content.reason
+            if (rpc.isConnected) {
+              const submitResponse = await rpc.submitBlock(blockTemplate)
+              if (submitResponse.content.added) {
+                this.logger.info(
+                  `Block submitted to rpc node ${rpc.host}:${rpc.port} successfully!`,
+                )
+                submitResp += 1
+              } else {
+                result = submitResponse.content.reason
+              }
             }
           }),
         )
@@ -406,6 +408,11 @@ export class MiningPool {
       this.rpcProxy.map(async (rpc) => {
         if (await rpc.tryConnect()) {
           connectedProxy += 1
+        } else {
+          this.connectTimeout = setTimeout(
+            () => void this.startConnectingMiningRpc(`${rpc.host}:${rpc.port}`),
+            5000,
+          )
         }
       }),
     )
@@ -446,7 +453,7 @@ export class MiningPool {
     })
   }
 
-  private async startConnectingSingleRpc(): Promise<void> {
+  private async startConnectingPayoutRpc(): Promise<void> {
     const connected = await this.rpc.tryConnect()
     if (!connected) {
       if (!this.connectWarned) {
@@ -456,7 +463,7 @@ export class MiningPool {
         this.connectWarned = true
       }
 
-      this.connectTimeout = setTimeout(() => void this.startConnectingRpc(), 5000)
+      this.connectTimeout = setTimeout(() => void this.startConnectingPayoutRpc(), 5000)
       return
     }
 
@@ -487,7 +494,7 @@ export class MiningPool {
     this.logger.info('Disconnected from node unexpectedly. Reconnecting.')
 
     this.webhooks.map((w) => w.poolDisconnected())
-    void this.startConnectingSingleRpc()
+    void this.startConnectingPayoutRpc()
   }
 
   private onDisconnectRpcProxy = (rpc: string): void => {
@@ -512,9 +519,11 @@ export class MiningPool {
   private async processNewBlocksProxy() {
     await Promise.all(
       this.rpcProxy.map(async (rpc) => {
-        for await (const payload of rpc.blockTemplateStream().contentStream(true)) {
-          Assert.isNotUndefined(payload.previousBlockInfo)
-          this.processTemplate(payload, `${rpc.host}:${rpc.port}`)
+        if (rpc.isConnected) {
+          for await (const payload of rpc.blockTemplateStream().contentStream(true)) {
+            Assert.isNotUndefined(payload.previousBlockInfo)
+            this.processTemplate(payload, `${rpc.host}:${rpc.port}`)
+          }
         }
       }),
     )
