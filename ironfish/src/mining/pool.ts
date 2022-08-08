@@ -499,6 +499,12 @@ export class MiningPool {
   }
 
   private processTemplate(payload: SerializedBlockTemplate, from: string) {
+    if (this.miningBlockTemplate.get(payload.header.sequence + 1)) {
+      this.logger.warn(
+        `Receive stale blockTemplate for sequence ${payload.header.sequence} from ${from}`,
+      )
+      return
+    }
     if (
       this.miningBlockTemplate.get(payload.header.sequence) &&
       from !== this.miningBlockTemplate.get(payload.header.sequence)
