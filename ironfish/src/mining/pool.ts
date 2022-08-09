@@ -353,21 +353,25 @@ export class MiningPool {
 
         let result = undefined
         let submitResp = 0
-        await Promise.all(
-          this.rpcProxy.map(async (rpc) => {
-            if (rpc.isConnected) {
-              const submitResponse = await rpc.submitBlock(blockTemplate)
-              if (submitResponse.content.added) {
-                this.logger.info(
-                  `Block submitted to rpc node ${rpc.host}:${rpc.port} successfully!`,
-                )
-                submitResp += 1
-              } else {
-                result = submitResponse.content.reason
+        try {
+          await Promise.all(
+            this.rpcProxy.map(async (rpc) => {
+              if (rpc.isConnected) {
+                const submitResponse = await rpc.submitBlock(blockTemplate)
+                if (submitResponse.content.added) {
+                  this.logger.info(
+                    `Block submitted to rpc node ${rpc.host}:${rpc.port} successfully!`,
+                  )
+                  submitResp += 1
+                } else {
+                  result = submitResponse.content.reason
+                }
               }
-            }
-          }),
-        )
+            }),
+          )
+        } catch (e) {
+          this.logger.warn(`Exception when submitBlockTemplate, ${JSON.stringify(e)}`)
+        }
 
         if (submitResp > 0) {
           const hashRate = await this.estimateHashRate()
@@ -489,9 +493,17 @@ export class MiningPool {
     await Promise.all(
       this.rpcProxy.map(async (rpc) => {
         if (rpc.isConnected) {
-          for await (const payload of rpc.blockTemplateStream().contentStream(true)) {
-            Assert.isNotUndefined(payload.previousBlockInfo)
-            this.processTemplate(payload, `${rpc.host}:${rpc.port}`)
+          try {
+            for await (const payload of rpc.blockTemplateStream().contentStream(true)) {
+              Assert.isNotUndefined(payload.previousBlockInfo)
+              this.processTemplate(payload, `${rpc.host}:${rpc.port}`)
+            }
+          } catch (e) {
+            this.logger.warn(
+              `Exception when getBlockTemplate on ${rpc.host}:${rpc.port}, ${JSON.stringify(
+                e,
+              )}`,
+            )
           }
         }
       }),
