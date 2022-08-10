@@ -59,6 +59,7 @@ import {
   UseAccountResponse,
 } from '../routes'
 import { ExportAccountRequest, ExportAccountResponse } from '../routes/accounts/exportAccount'
+import { GetAccountStatusRequest, GetAccountStatusResponse } from '../routes/accounts/getStatus'
 import { ImportAccountRequest, ImportAccountResponse } from '../routes/accounts/importAccount'
 import { RemoveAccountRequest, RemoveAccountResponse } from '../routes/accounts/removeAccount'
 import { RescanAccountRequest, RescanAccountResponse } from '../routes/accounts/rescanAccount'
@@ -166,6 +167,24 @@ export abstract class RpcClient {
   ): Promise<RpcResponseEnded<GetBalanceResponse>> {
     return this.request<GetBalanceResponse>(
       `${ApiNamespace.account}/getBalance`,
+      params,
+    ).waitForEnd()
+  }
+
+  accountStatusStream(
+    params: GetAccountStatusRequest = {},
+  ): RpcResponse<void, GetAccountStatusResponse> {
+    return this.request<void, GetAccountStatusResponse>(
+      `${ApiNamespace.account}/getStatus`,
+      params,
+    )
+  }
+
+  async accountStatus(
+    params: GetAccountStatusRequest = {},
+  ): Promise<RpcResponseEnded<GetAccountStatusResponse>> {
+    return this.request<GetAccountStatusResponse>(
+      `${ApiNamespace.account}/getStatus`,
       params,
     ).waitForEnd()
   }

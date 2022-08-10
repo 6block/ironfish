@@ -1,7 +1,12 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
-import { FileUtils, GetStatusResponse, PromiseUtils } from '@ironfish/sdk'
+import {
+  FileUtils,
+  GetAccountStatusResponse,
+  GetStatusResponse,
+  PromiseUtils,
+} from '@ironfish/sdk'
 import { Assert } from '@ironfish/sdk'
 import { Flags } from '@oclif/core'
 import blessed from 'blessed'
@@ -25,8 +30,9 @@ export default class Status extends IronfishCommand {
 
     if (!flags.follow) {
       const client = await this.sdk.connectRpc()
-      const response = await client.status()
-      this.log(renderStatus(response.content))
+      const nodeResponse = await client.status()
+      const accountResponse = await client.accountStatus({})
+      this.log(renderStatus(nodeResponse.content, accountResponse.content))
       this.exit(0)
     }
 
@@ -49,18 +55,44 @@ export default class Status extends IronfishCommand {
         continue
       }
 
-      const response = this.sdk.client.statusStream()
+      const nodeResponse = this.sdk.client.statusStream()
+      const accountResponse = this.sdk.client.accountStatusStream({
+        stream: true,
+      })
 
-      for await (const value of response.contentStream()) {
-        statusText.clearBaseLine(0)
-        statusText.setContent(renderStatus(value))
-        screen.render()
+      let scanIsRunning = true
+      let accountStatusBackup: GetAccountStatusResponse = {
+        sequence: 0,
+        endSequence: -1,
+        startedAt: 0,
+        head: '',
+      }
+
+      for await (const value of nodeResponse.contentStream()) {
+        let accountStatusCount = 0
+        if (scanIsRunning) {
+          for await (const account of accountResponse.contentStream()) {
+            accountStatusCount += 1
+            statusText.clearBaseLine(0)
+            statusText.setContent(renderStatus(value, account))
+            screen.render()
+            if (accountStatusCount === 100 || Number(account.endSequence) === -1) {
+              accountStatusBackup = account
+              scanIsRunning = false
+              break
+            }
+          }
+        } else {
+          statusText.clearBaseLine(0)
+          statusText.setContent(renderStatus(value, accountStatusBackup))
+          screen.render()
+        }
       }
     }
   }
 }
 
-function renderStatus(content: GetStatusResponse): string {
+function renderStatus(content: GetStatusResponse, account: GetAccountStatusResponse): string {
   const nodeStatus = `${content.node.status.toUpperCase()}`
   let blockSyncerStatus = content.blockSyncer.status.toString().toUpperCase()
   const blockSyncerStatusDetails: string[] = []
