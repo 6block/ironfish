@@ -511,15 +511,22 @@ export class MiningPool {
   }
 
   private processTemplate(payload: SerializedBlockTemplate, from: string) {
-    if (this.miningBlockTemplate.get(payload.header.sequence + 1)) {
+    const currentBlockTemplate = this.miningRequestBlocks.get(this.nextMiningRequestId - 1)
+    let currentTaskSequence = undefined
+    let currentTaskPreviousHash = undefined
+    if (currentBlockTemplate) {
+      currentTaskSequence = currentBlockTemplate.header.sequence
+      currentTaskPreviousHash = currentBlockTemplate.header.previousBlockHash
+    }
+    if (currentTaskSequence && payload.header.sequence < currentTaskSequence) {
       this.logger.warn(
         `Receive stale blockTemplate for sequence ${payload.header.sequence} from ${from}`,
       )
       return
     }
     if (
-      this.miningBlockTemplate.get(payload.header.sequence) &&
-      from !== this.miningBlockTemplate.get(payload.header.sequence)
+      currentTaskPreviousHash &&
+      currentTaskPreviousHash === payload.header.previousBlockHash
     ) {
       this.logger.info(
         `Receive duplicated blockTemplate for sequence ${payload.header.sequence} from ${from}`,
@@ -531,7 +538,6 @@ export class MiningPool {
     this.logger.info(
       `Receive new blockTemplate for sequence ${payload.header.sequence} from ${from}`,
     )
-    this.miningBlockTemplate.set(payload.header.sequence, from)
     this.restartCalculateTargetInterval()
 
     const currentHeadTarget = new Target(Buffer.from(payload.previousBlockInfo.target, 'hex'))
