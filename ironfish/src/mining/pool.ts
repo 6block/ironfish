@@ -401,7 +401,6 @@ export class MiningPool {
   }
 
   private async startConnectingRpc(): Promise<void> {
-    const connected = await this.rpc.tryConnect()
     let connectedProxy = 0
     await Promise.all(
       this.rpcProxy.map(async (rpc) => {
@@ -420,7 +419,7 @@ export class MiningPool {
       return
     }
 
-    if (!connected && connectedProxy === 0) {
+    if (connectedProxy === 0) {
       if (!this.connectWarned) {
         this.logger.warn(
           `Failed to connect to node on ${String(this.rpc.connection.mode)}, retrying...`,
@@ -430,10 +429,6 @@ export class MiningPool {
 
       this.connectTimeout = setTimeout(() => void this.startConnectingRpc(), 5000)
       return
-    }
-
-    if (connected) {
-      this.webhooks.map((w) => w.poolConnected())
     }
 
     if (connectedProxy) {
