@@ -25,6 +25,19 @@ import { mineableHeaderString } from './utils'
 import { WebhookNotifier } from './webhooks'
 
 const RECALCULATE_TARGET_TIMEOUT = 10000
+const KFAKA_SHARE_BATCH = 500
+
+export type ShareRecord = {
+  coin_type: string
+  pool_id: string
+  user_address: string | null
+  worker_id: string
+  height: number | null
+  block_hash: string | null
+  difficulty: string
+  status: string
+  timestamp: number
+}
 
 export class MiningPool {
   readonly stratum: StratumServer
@@ -54,6 +67,7 @@ export class MiningPool {
 
   currentHeadTimestamp: number | null
   currentHeadDifficulty: bigint | null
+  kafkaShares: ShareRecord[]
 
   recalculateTargetInterval: SetIntervalToken | null
 
@@ -102,6 +116,7 @@ export class MiningPool {
 
     this.recalculateTargetInterval = null
     this.notifyStatusInterval = null
+    this.kafkaShares = []
 
     if (options.kafkaHosts.length !== 0) {
       this.logger.info('Kafka Init')
@@ -279,18 +294,23 @@ export class MiningPool {
     if (shareRecord.height === null) {
       this.logger.info(`[Pool] Share null height: ${JSON.stringify(shareRecord)}`)
     }
-    const shareKafka = [
-      {
-        topic: 'ironshare', // TBD
-        messages: JSON.stringify([shareRecord]),
-      },
-    ]
-    this.kafka.send(shareKafka, (error, data) => {
-      this.logger.debug(`${JSON.stringify(data)} submitted successfully! `)
-      if (error) {
-        this.logger.info(`Send kafka message error: ${error}`)
-      }
-    })
+    this.kafkaShares.push(shareRecord)
+
+    if (this.kafkaShares.length >= KFAKA_SHARE_BATCH) {
+      const shareKafka = [
+        {
+          topic: 'ironshare',
+          messages: JSON.stringify(this.kafkaShares),
+        },
+      ]
+      this.kafkaShares = []
+      this.kafka.send(shareKafka, (error, data) => {
+        this.logger.debug(`${JSON.stringify(data)} submitted successfully! `)
+        if (error) {
+          this.logger.info(`Send kafka message error: ${error}`)
+        }
+      })
+    }
   }
 
   async submitWork(
