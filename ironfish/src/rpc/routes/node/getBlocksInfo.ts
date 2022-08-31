@@ -98,7 +98,10 @@ async function getBlockInfo(sequence: number, node: IronfishNode): Promise<Block
 
   for (const tx of block.transactions) {
     const fee = tx.fee()
-    reward += Math.abs(Number(fee))
+    if (fee < 0) {
+      reward = Math.abs(Number(fee))
+      break
+    }
   }
 
   return {

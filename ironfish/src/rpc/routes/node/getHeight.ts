@@ -66,7 +66,10 @@ async function getHeight(node: IronfishNode): Promise<GetHeightResponse> {
 
   for (const tx of block.transactions) {
     const fee = tx.fee()
-    reward += Math.abs(Number(fee))
+    if (fee < 0) {
+      reward = Math.abs(Number(fee))
+      break
+    }
   }
 
   const height: GetHeightResponse = {

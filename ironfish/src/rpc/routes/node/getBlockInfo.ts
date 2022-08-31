@@ -96,7 +96,10 @@ router.register<typeof GetNodeBlockInfoRequestSchema, GetNodeBlockInfoResponse>(
 
     for (const tx of block.transactions) {
       const fee = tx.fee()
-      reward += Math.abs(Number(fee))
+      if (fee < 0) {
+        reward = Math.abs(Number(fee))
+        break
+      }
     }
 
     request.end({
