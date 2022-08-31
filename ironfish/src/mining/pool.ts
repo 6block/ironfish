@@ -25,7 +25,7 @@ import { mineableHeaderString } from './utils'
 import { WebhookNotifier } from './webhooks'
 
 const RECALCULATE_TARGET_TIMEOUT = 10000
-const KFAKA_SHARE_BATCH = 500
+const KAFKA_SHARE_BATCH = 500
 
 export type ShareRecord = {
   coin_type: string
@@ -288,7 +288,7 @@ export class MiningPool {
     }
     this.kafkaShares.push(shareRecord)
 
-    if (this.kafkaShares.length >= KFAKA_SHARE_BATCH) {
+    if (this.kafkaShares.length >= KAFKA_SHARE_BATCH) {
       const shareKafka = [
         {
           topic: 'ironshare',
@@ -388,7 +388,7 @@ export class MiningPool {
         }
 
         if (submitResp > 0) {
-          const hashRate = await this.estimateHashRate()
+          const hashRate = 0
           const hashedHeaderHex = hashedHeader.toString('hex')
 
           this.logger.info(
@@ -410,7 +410,6 @@ export class MiningPool {
         this.sendKafka(client, 'VALID', hashedHeader.toString('hex'), height)
       }
       this.logger.debug('Valid pool share submitted')
-      await this.shares.submitShare(client.publicAddress)
     } else {
       this.addWorkSubmission(client.id, randomness)
 
@@ -652,18 +651,13 @@ export class MiningPool {
   }
 
   async getStatus(publicAddress?: string): Promise<MiningStatusMessage> {
-    const [hashRate, sharesPending] = await Promise.all([
-      this.estimateHashRate(),
-      this.shares.sharesPendingPayout(),
-    ])
-
     let addressMinerCount = 0
 
     const status: MiningStatusMessage = {
       name: this.name,
-      hashRate: hashRate,
+      hashRate: 0,
       miners: this.stratum.subscribed,
-      sharesPending: sharesPending,
+      sharesPending: 0,
       bans: this.stratum.peers.banCount,
       clients: this.stratum.clients.size,
     }
