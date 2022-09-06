@@ -31,6 +31,7 @@ export type ShareRecord = {
   coin_type: string
   pool_id: string
   user_address: string | null
+  isEmailUser: boolean
   worker_id: string
   height: number | null
   block_hash: string | null
@@ -276,6 +277,7 @@ export class MiningPool {
       coin_type: 'IRON',
       pool_id: '6block-ironfish',
       user_address: client.publicAddress,
+      isEmailUser: client.useEmail,
       worker_id: client.name ? client.name : `${client.id}`,
       height: height,
       block_hash: block_hash,
