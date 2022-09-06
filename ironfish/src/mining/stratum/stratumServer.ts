@@ -199,10 +199,17 @@ export class StratumServer {
           }
 
           if (!isValidPublicAddress(body.result.publicAddress)) {
-            this.peers.ban(client, {
-              message: `Invalid public address: ${body.result.publicAddress}`,
-            })
-            return
+            if (body.result.publicAddress.includes('@')) {
+              this.logger.warn(
+                `Use email address as user address: ${body.result.publicAddress}`,
+              )
+              client.useEmail = true
+            } else {
+              this.logger.warn(
+                `Invalid publicAddress; Invalid email address: ${body.result.publicAddress}`,
+              )
+              return
+            }
           }
 
           client.publicAddress = body.result.publicAddress
