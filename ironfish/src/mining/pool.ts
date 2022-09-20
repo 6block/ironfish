@@ -24,7 +24,7 @@ import { StratumServerClient } from './stratum/stratumServerClient'
 import { mineableHeaderString } from './utils'
 import { WebhookNotifier } from './webhooks'
 
-const RECALCULATE_TARGET_TIMEOUT = 10000
+const RECALCULATE_TARGET_TIMEOUT = 30000
 const KAFKA_SHARE_BATCH = 500
 
 export type ShareRecord = {
@@ -567,7 +567,9 @@ export class MiningPool {
     Assert.isNotNull(this.currentHeadTimestamp)
     Assert.isNotNull(this.currentHeadDifficulty)
 
-    const latestBlock = this.miningRequestBlocks.get(this.nextMiningRequestId - 1)
+    const currentBlock = this.miningRequestBlocks.get(this.nextMiningRequestId - 1)
+    const latestBlock = JSON.parse(JSON.stringify(currentBlock)) as typeof currentBlock
+
     Assert.isNotNull(latestBlock)
 
     const newTime = new Date()
