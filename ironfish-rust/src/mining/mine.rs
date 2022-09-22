@@ -28,8 +28,8 @@ pub(crate) fn mine_batch(
     step_size: usize,
     batch_size: u64,
 ) -> Option<u64> {
-    let end = start + batch_size;
-    for i in (start..end).step_by(step_size) {
+    let end = start + batch_size - step_size as u64;
+    for i in (start..=end).step_by(step_size) {
         randomize_header(i, header_bytes);
         let hash = blake3::hash(header_bytes);
 
