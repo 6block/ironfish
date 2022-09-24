@@ -16,6 +16,7 @@ interface MempoolEntry {
   hash: TransactionHash
 }
 
+const MAX_MEMPOOL_SIZE = 50000
 export class MemPool {
   private readonly transactions = new BufferMap<Transaction>()
   /* Keep track of number of bytes stored in the transaction map */
@@ -191,6 +192,9 @@ export class MemPool {
   }
 
   private addTransaction(transaction: Transaction): void {
+    if (this.size() >= MAX_MEMPOOL_SIZE) {
+      return
+    }
     const hash = transaction.hash()
     if (!this.transactions.has(hash)) {
       this.transactions.set(hash, transaction)
