@@ -568,7 +568,9 @@ export class MiningPool {
     Assert.isNotNull(this.currentHeadDifficulty)
 
     const currentBlock = this.miningRequestBlocks.get(this.nextMiningRequestId - 1)
-    const latestBlock = JSON.parse(JSON.stringify(currentBlock)) as typeof currentBlock
+    Assert.isNotNull(currentBlock)
+    const latestBlock = Object.assign({}, currentBlock)
+    latestBlock.header = Object.assign({}, currentBlock.header)
 
     Assert.isNotNull(latestBlock)
 
