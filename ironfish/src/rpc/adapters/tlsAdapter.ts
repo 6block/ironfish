@@ -32,7 +32,7 @@ export class RpcTlsAdapter extends RpcSocketAdapter {
     this.nodeKeyPath = nodeKeyPath
     this.nodeCertPath = nodeCertPath
     this.node = node
-    this.enableAuthentication = true
+    this.enableAuthentication = false
   }
 
   protected async createServer(): Promise<net.Server> {
