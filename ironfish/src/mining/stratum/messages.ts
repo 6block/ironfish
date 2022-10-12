@@ -52,6 +52,7 @@ export type MiningGetStatusMessage =
   | undefined
 
 export type MiningStatusMessage = {
+  currentJobSequence: number
   name: string
   hashRate: number
   miners: number
@@ -131,6 +132,7 @@ export const MiningGetStatusSchema: yup.ObjectSchema<MiningGetStatusMessage> = y
 
 export const MiningStatusSchema: yup.ObjectSchema<MiningStatusMessage> = yup
   .object({
+    currentJobSequence: yup.number().required(),
     name: yup.string().required(),
     hashRate: yup.number().required(),
     miners: yup.number().required(),

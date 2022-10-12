@@ -684,8 +684,14 @@ export class MiningPool {
 
   async getStatus(publicAddress?: string): Promise<MiningStatusMessage> {
     let addressMinerCount = 0
+    const originalBlockTemplate = this.miningRequestBlocks.get(this.nextMiningRequestId - 1)
+    let currentJobSequence = -1
+    if (originalBlockTemplate) {
+      currentJobSequence = originalBlockTemplate.header.sequence
+    }
 
     const status: MiningStatusMessage = {
+      currentJobSequence: currentJobSequence,
       name: this.name,
       hashRate: 0,
       miners: this.stratum.subscribed,
