@@ -108,6 +108,7 @@ export abstract class WebhookNotifier {
   }
 
   poolStatus(status: {
+    currentJobSequence: number
     name: string
     hashRate: number
     miners: number
@@ -118,9 +119,11 @@ export abstract class WebhookNotifier {
     this.sendText(
       `Status for mining pool '${status.name}':\n\tHashrate: ${FileUtils.formatHashRate(
         status.hashRate,
-      )}/s\n\tMiners: ${status.miners}\n\tShares pending: ${status.sharesPending}\n\tClients: ${
-        status.clients
-      }\n\tBans: ${status.bans}`,
+      )}/s\n\tLatestJob: ${status.currentJobSequence}\n\tMiners: ${
+        status.miners
+      }\n\tShares pending: ${status.sharesPending}\n\tClients: ${status.clients}\n\tBans: ${
+        status.bans
+      }`,
     )
   }
 
