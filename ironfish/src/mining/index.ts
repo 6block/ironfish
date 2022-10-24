@@ -5,7 +5,6 @@
 export { MiningManager } from './manager'
 export { Discord } from './webhooks'
 export { Lark } from './webhooks'
-export { Monitor } from './webhooks'
 export { WebhookNotifier } from './webhooks'
 export { MiningPool } from './pool'
 export { MiningPoolMiner } from './poolMiner'

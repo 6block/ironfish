@@ -9,7 +9,6 @@ import {
   Discord,
   Lark,
   MiningPool,
-  Monitor,
   parseUrl,
   StringUtils,
   TlsUtils,
@@ -32,10 +31,6 @@ export class StartPool extends IronfishCommand {
     lark: Flags.string({
       char: 'l',
       description: 'A lark webhook URL to send critical information to',
-    }),
-    monitor: Flags.string({
-      char: 'm',
-      description: 'a monitor webhook URL to send critical information to',
     }),
     miningRpc: Flags.string({
       char: 'r',
@@ -124,20 +119,6 @@ export class StartPool extends IronfishCommand {
       )
 
       this.log(`Lark enabled: ${larkWebhook}`)
-    }
-
-    const monitorWebhook = flags.monitor ?? this.sdk.config.get('poolMonitorWebhook')
-    if (monitorWebhook) {
-      webhooks.push(
-        new Monitor({
-          webhook: monitorWebhook,
-          logger: this.logger,
-          explorerBlocksUrl: this.sdk.config.get('explorerBlocksUrl'),
-          explorerTransactionsUrl: this.sdk.config.get('explorerTransactionsUrl'),
-        }),
-      )
-
-      this.log(`Monitor enabled: ${monitorWebhook}`)
     }
 
     let rpcProxy: string[] = []

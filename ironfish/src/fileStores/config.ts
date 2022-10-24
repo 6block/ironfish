@@ -235,12 +235,6 @@ export type ConfigOptions = {
   poolLarkWebhook: ''
 
   /**
-
-   * The monitor webhook URL to post pool critical pool information to
-   */
-  poolMonitorWebhook: ''
-
-  /**
    * Whether we want the logs to the console to be in JSON format or not. This can be used to log to
    * more easily process logs on a remote server using a log service like Datadog
    */
@@ -347,7 +341,6 @@ export class Config extends KeyStore<ConfigOptions> {
       poolDiscordWebhook: '',
       poolMaxConnectionsPerIp: 0,
       poolLarkWebhook: '',
-      poolMonitorWebhook: '',
       jsonLogs: false,
       explorerBlocksUrl: DEFAULT_EXPLORER_BLOCKS_URL,
       explorerTransactionsUrl: DEFAULT_EXPLORER_TRANSACTIONS_URL,
