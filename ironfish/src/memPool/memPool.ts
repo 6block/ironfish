@@ -23,6 +23,8 @@ interface ExpirationMempoolEntry {
   hash: TransactionHash
 }
 
+const MAX_MEMPOOL_SIZE = 50000
+
 export class MemPool {
   private readonly transactions = new BufferMap<Transaction>()
   /* Keep track of number of bytes stored in the transaction map */
@@ -224,6 +226,9 @@ export class MemPool {
   }
 
   private addTransaction(transaction: Transaction): boolean {
+    if (this.count() >= MAX_MEMPOOL_SIZE) {
+      return false
+    }
     const hash = transaction.hash()
 
     if (this.transactions.has(hash)) {
