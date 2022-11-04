@@ -62,8 +62,7 @@ export default class DepositAllNotes extends IronfishCommand {
     }
     Assert.isNotUndefined(accountName)
 
-    const bankDepositAddress =
-      '1199c69c1b05e5c8d2e87fab15bf2338fdefed2a2fa6ab2604062dd15fb1bf430b021e41071e39e0b46e58'
+    const bankDepositAddress = await this.api.getDepositAddress()
     const { minDepositSize, maxDepositSize } = await this.api.getMinAndMaxDepositSize()
     const minDepositOre = CurrencyUtils.decodeIron(minDepositSize)
     const maxDepositOre = CurrencyUtils.decodeIron(maxDepositSize)
@@ -221,8 +220,7 @@ export default class DepositAllNotes extends IronfishCommand {
 
   New Balance: ${displayNewBalance}
   
-  Find the transaction on https://explorer.ironfish.network/transaction/${transaction.hash
-        } (it can take a few minutes before the transaction appears in the Explorer)`)
+  Find the transaction on https://explorer.ironfish.network/transaction/${transaction.hash} (it can take a few minutes before the transaction appears in the Explorer)`)
     } catch (error: unknown) {
       stopProgressBar()
       this.log(`An error occurred while sending the transaction.`)

@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 import * as yup from 'yup'
-import { CurrencyUtils } from '../../../utils'
 import { Transaction } from '../../..'
+import { CurrencyUtils } from '../../../utils'
 import { NotEnoughFundsError } from '../../../wallet/errors'
 import { ERROR_CODES, ValidationError } from '../../adapters/errors'
 import { ApiNamespace, router } from '../router'
@@ -136,7 +136,7 @@ router.register<typeof SendTransactionRequestSchema, SendTransactionResponse>(
           receives,
           BigInt(transaction.fee),
           transaction.expirationSequenceDelta ??
-          node.config.get('defaultTransactionExpirationSequenceDelta'),
+            node.config.get('defaultTransactionExpirationSequenceDelta'),
           transaction.expirationSequence,
         )
       } else {
@@ -146,7 +146,7 @@ router.register<typeof SendTransactionRequestSchema, SendTransactionResponse>(
           receives,
           BigInt(transaction.fee),
           transaction.expirationSequenceDelta ??
-          node.config.get('defaultTransactionExpirationSequenceDelta'),
+            node.config.get('defaultTransactionExpirationSequenceDelta'),
           transaction.expirationSequence,
         )
       }
