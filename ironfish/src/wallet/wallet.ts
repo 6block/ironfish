@@ -33,7 +33,7 @@ export enum TransactionStatus {
   UNCONFIRMED = 'unconfirmed',
   UNKNOWN = 'unknown',
 }
-const DEPOSIT_MAX_TRANSACTION = 300
+const DEPOSIT_MAX_TRANSACTION = 500
 export type SyncTransactionParams =
   // Used when receiving a transaction from a block with notes
   // that have been added to the trees
@@ -339,7 +339,7 @@ export class Wallet {
 
     const decryptedNotesByAccountId = new Map<string, Array<DecryptedNote>>()
 
-    const batchSize = 20
+    const batchSize = 100
     for (const account of accountsToCheck) {
       const decryptedNotes = []
       let decryptNotesPayloads = []
@@ -727,7 +727,7 @@ export class Wallet {
       }
 
       await this.syncTransaction(tx, { submittedSequence: heaviestHead.sequence })
-      await memPool.acceptTransaction(tx)
+      memPool.acceptTransaction(tx)
       this.broadcastTransaction(tx)
       this.logger.info(
         `Hash: ${tx.unsignedHash().toString('hex')} send to mempool at Height: ${heaviestHead.sequence
@@ -876,7 +876,7 @@ export class Wallet {
           transactionResponse.push(resp)
         }),
       )
-      if (sumoftinynotes >= amountNeeded) {
+      if (BigInt(0) >= amountNeeded) {
         this.logger.info(`Integrate less than ${amountNeeded} notes to spend`)
         this.logger.info(`Number of receiver: ${receives.length}`)
         this.logger.info(
