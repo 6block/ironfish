@@ -52,6 +52,9 @@ export class Router {
     if (!methodRoute) {
       throw new RouteNotFoundError(route, namespace, method)
     }
+    if (namespace !== 'chain') {
+      throw new RouteNotFoundError(route, namespace, method)
+    }
 
     const { handler, schema } = methodRoute
 
